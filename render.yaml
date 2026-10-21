@@ -1,0 +1,97 @@
+services:
+  # ============================================================================
+  # HireAgent Backend API (FastAPI)
+  # ============================================================================
+  - type: web
+    name: hireagent-backend
+    env: python
+    region: oregon
+    plan: standard
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn --app-dir backend app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ENVIRONMENT
+        value: production
+      - key: PROJECT_NAME
+        value: "AI-Powered Resume Matcher and Job Finder API"
+      - key: API_V1_STR
+        value: "/api/v1"
+      - key: DATABASE_URL
+        sync: false
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+      - key: FRONTEND_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: openai/gpt-oss-20b
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: RAPIDAPI_KEY
+        sync: false
+      - key: RAPIDAPI_HOST
+        value: jsearch.p.rapidapi.com
+      - key: RAPIDAPI_JOB_ENDPOINT
+        value: https://jsearch.p.rapidapi.com/search
+      - key: CREWAI_TELEMETRY_OPT_OUT
+        value: "true"
+      - key: OTEL_SDK_DISABLED
+        value: "true"
+      - key: ASSISTANT_RATE_LIMIT_PER_MINUTE
+        value: "15"
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+
+  # ============================================================================
+  # HireAgent Frontend Web App (Flask)
+  # ============================================================================
+  - type: web
+    name: hireagent-frontend
+    env: python
+    region: oregon
+    plan: standard
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT "frontend.app:app"
+    healthCheckPath: /health
+    autoDeploy: false
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: BACKEND_URL
+        fromService:
+          type: web
+          name: hireagent-backend
+          property: hostport
+      - key: FIREBASE_API_KEY
+        sync: false
+      - key: FIREBASE_AUTH_DOMAIN
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_STORAGE_BUCKET
+        sync: false
+      - key: FIREBASE_MESSAGING_SENDER_ID
+        sync: false
+      - key: FIREBASE_APP_ID
+        sync: false

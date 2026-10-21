@@ -33,7 +33,7 @@ def create_access_token(subject: Any, expires_delta: Optional[timedelta] = None)
 def decode_access_token(token: str) -> Optional[dict]:
     """Decodes and validates a JWT token. Returns payload dict or None if invalid/expired."""
     try:
-        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM], leeway=10)
         return payload
     except jwt.PyJWTError:
         return None

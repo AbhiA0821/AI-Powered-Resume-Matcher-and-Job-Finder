@@ -15,8 +15,16 @@ UPLOAD_DIR = os.path.join(
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx"}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB limit
+from typing import List, Optional
 
-def save_and_create_resume(db: Session, user: User, file: UploadFile) -> Resume:
+def save_and_create_resume(
+    db: Session,
+    user: User,
+    file: UploadFile,
+    target_role: Optional[str] = None,
+    preferred_location: Optional[str] = None,
+    preferred_company: Optional[str] = None
+) -> Resume:
     """Saves uploaded resume to disk, extracts text, and creates database record for user."""
     filename = file.filename or "resume.pdf"
     ext = os.path.splitext(filename)[1].lower()
@@ -70,6 +78,20 @@ def save_and_create_resume(db: Session, user: User, file: UploadFile) -> Resume:
         # Non-blocking log if Qdrant Cloud is temporarily unavailable
         print(f"[Warning] Failed to index resume {resume.id} to Qdrant Cloud: {e}")
 
+    # Trigger End-to-End Analysis Pipeline for User Workspace (Phase 4)
+    try:
+        from app.services.dashboard_service import invalidate_user_dashboard, run_user_pipeline_sync
+        invalidate_user_dashboard(user.id)
+        run_user_pipeline_sync(
+            user_id=user.id,
+            db=db,
+            target_role_override=target_role,
+            location_preference=preferred_location,
+            company_preference=preferred_company
+        )
+    except Exception as e:
+        print(f"[Warning] Failed to execute dashboard pipeline on resume upload: {e}")
+
     return resume
 
 def get_user_resumes(db: Session, user: User) -> List[Resume]:
@@ -100,7 +122,14 @@ def delete_user_resume(db: Session, user: User, resume_id: int) -> dict:
         from app.services.qdrant_service import delete_resume_vectors
         delete_resume_vectors(user_id=user.id, resume_id=resume.id)
     except Exception as e:
-        print(f"[Warning] Failed to delete resume {resume.id} vectors from Qdrant: {e}")
+        print(f"[Warning] Failed to cleanup Qdrant vectors for resume {resume_id}: {e}")
+
+    # Invalidate dashboard state cache
+    try:
+        from app.services.dashboard_service import invalidate_user_dashboard
+        invalidate_user_dashboard(user.id)
+    except Exception:
+        pass
 
     db.delete(resume)
     db.commit()

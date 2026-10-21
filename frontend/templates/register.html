@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icons %}
+
+{% block title %}Create Account — AI-Powered Resume Matcher and Job Finder{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center my-4">
+    <div class="col-md-6 col-lg-5">
+        <div class="ha-card p-4 p-md-5">
+            <div class="text-center mb-4">
+                <div class="d-inline-flex align-items-center gap-2 mb-2">
+                    <span class="ha-brand-mark">RESUME MATCHER</span>
+                    <span class="text-muted fs-8 font-mono tracking-wider">& JOB FINDER</span>
+                </div>
+                <h1 class="h4 fw-bold mt-2 text-white">Create Your Account</h1>
+                <p class="text-secondary fs-8 mb-0">Discover jobs matching your verified technical skills.</p>
+            </div>
+
+            <form action="{{ url_for('register') }}" method="POST" novalidate>
+                <div class="mb-3">
+                    <label for="reg-name" class="form-label fs-8 text-secondary">Full Name</label>
+                    <input type="text" id="reg-name" name="name" class="form-control" placeholder="Alex Morgan" required autocomplete="name">
+                </div>
+                <div class="mb-3">
+                    <label for="reg-email" class="form-label fs-8 text-secondary">Email Address</label>
+                    <input type="email" id="reg-email" name="email" class="form-control" placeholder="alex@example.com" required autocomplete="email">
+                </div>
+                <div class="mb-4">
+                    <label for="reg-password" class="form-label fs-8 text-secondary">Password</label>
+                    <input type="password" id="reg-password" name="password" class="form-control" placeholder="••••••••" required autocomplete="new-password">
+                </div>
+                <button type="submit" class="btn btn-ha-primary w-100 py-2">Create Account →</button>
+                <div class="text-center mt-3 fs-8 text-muted">
+                    Already registered? <a href="{{ url_for('login') }}" class="text-white fw-semibold text-decoration-none">Sign In</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

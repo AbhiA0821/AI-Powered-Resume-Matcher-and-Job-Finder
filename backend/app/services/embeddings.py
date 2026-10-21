@@ -5,14 +5,21 @@ from typing import List, Optional
 _model_instance = None
 MODEL_NAME = "BAAI/bge-small-en-v1.5"
 EMBEDDING_DIMENSION = 384
+_EMBED_CACHE: dict = {}
 
 def get_embedding_model():
-    """Lazily initializes and returns the SentenceTransformer model singleton."""
+    """Lazily initializes and returns the SentenceTransformer model singleton.
+    Prioritizes locally cached weights to eliminate unauthenticated Hugging Face Hub network delays.
+    """
     global _model_instance
     if _model_instance is None:
         from sentence_transformers import SentenceTransformer
-        # Load local open model BAAI/bge-small-en-v1.5 (downloaded/cached locally via Hugging Face)
-        _model_instance = SentenceTransformer(MODEL_NAME)
+        try:
+            # Load from local cache first (instant zero-network load)
+            _model_instance = SentenceTransformer(MODEL_NAME, local_files_only=True)
+        except Exception:
+            # Fallback to standard download if cache not populated (e.g. fresh Render container)
+            _model_instance = SentenceTransformer(MODEL_NAME)
     return _model_instance
 
 def _validate_single_text(text: str, arg_name: str = "text") -> str:
@@ -46,13 +53,19 @@ def embed_text(text: str) -> List[float]:
     For normalized vectors, cosine similarity equals the dot/inner product.
     """
     valid_text = _validate_single_text(text, arg_name="text")
+    if valid_text in _EMBED_CACHE:
+        return _EMBED_CACHE[valid_text]
+
     model = get_embedding_model()
     
     # Generate normalized embedding vector
     raw_embedding = model.encode(valid_text, normalize_embeddings=True, convert_to_numpy=True)
     vector = [float(x) for x in raw_embedding.tolist()]
+    validated = _validate_vector_output(vector)
     
-    return _validate_vector_output(vector)
+    if len(_EMBED_CACHE) < 2000:
+        _EMBED_CACHE[valid_text] = validated
+    return validated
 
 def embed_texts(texts: List[str]) -> List[List[float]]:
     """Converts a batch list of input strings into a list of 384-dimensional normalized vector representations.

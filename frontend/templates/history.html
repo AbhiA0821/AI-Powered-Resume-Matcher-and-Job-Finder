@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icons %}
+
+{% block title %}Matching History — Resume Matcher & Job Finder{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4">
+    <!-- Header -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 pb-3 border-bottom border-secondary border-opacity-25">
+        <div>
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="ha-brand-mark fs-7">RM</span>
+                <h1 class="h3 fw-bold text-white mb-0">Resume Matching History</h1>
+            </div>
+            <p class="text-secondary fs-8 mb-0">
+                Track your previously analyzed resumes and run matching against live and catalog jobs.
+            </p>
+        </div>
+        <div>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-ha-primary d-inline-flex align-items-center gap-2">
+                {{ icons.icon("upload", size=14) }}
+                <span>Upload New Resume</span>
+            </a>
+        </div>
+    </div>
+
+    {% if resumes %}
+    <div class="row g-3">
+        {% for r in resumes %}
+        <div class="col-12">
+            <div class="ha-card p-3 p-md-4">
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                    <div class="d-flex align-items-start gap-3">
+                        <div class="ha-brand-mark p-2 rounded-circle flex-shrink-0" aria-hidden="true" style="width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center;">
+                            {{ icons.icon("document", size=18) }}
+                        </div>
+                        <div>
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <h2 class="h5 fw-bold text-white mb-0">{{ r.filename }}</h2>
+                                {% if loop.first %}
+                                <span class="badge badge-accent fs-8">Active Resume</span>
+                                {% endif %}
+                            </div>
+                            <div class="d-flex flex-wrap align-items-center gap-3 text-secondary fs-8">
+                                <span class="d-inline-flex align-items-center gap-1">
+                                    {{ icons.icon("calendar", size=13) }}
+                                    <span>Date: {{ r.created_at[:10] if r.created_at else 'Recently' }}</span>
+                                </span>
+                                {% if r.target_role %}
+                                <span class="badge badge-surface font-mono fs-8">
+                                    Role: {{ r.target_role }}
+                                </span>
+                                {% endif %}
+                                <span class="badge badge-surface font-mono fs-8">
+                                    ID #{{ r.id }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <form action="{{ url_for('dashboard') }}" method="POST" class="d-inline">
+                            <input type="hidden" name="resume_id" value="{{ r.id }}">
+                            <input type="hidden" name="action" value="match_existing">
+                            <button type="submit" class="btn btn-sm btn-ha-primary d-inline-flex align-items-center gap-2">
+                                <span>Find Matching Jobs Again →</span>
+                            </button>
+                        </form>
+                        <form action="{{ url_for('history_delete', resume_id=r.id) }}" method="POST" class="d-inline" onsubmit="return confirm('Delete this resume from your history?');">
+                            <button type="submit" class="btn btn-sm btn-ha-ghost text-danger d-inline-flex align-items-center gap-1" title="Delete resume">
+                                {{ icons.icon("trash", size=14) }}
+                                <span>Delete</span>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="ha-empty-state py-5">
+        <div class="ha-empty-state-icon" aria-hidden="true">{{ icons.icon("document", size=36) }}</div>
+        <h2 class="ha-empty-state-title">No Resume History Yet</h2>
+        <p class="ha-empty-state-desc mb-3">
+            You haven't uploaded any resumes yet. Upload a resume on the Resume Matcher page to get started.
+        </p>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-ha-primary">
+            {{ icons.icon("upload", size=14) }}
+            <span>Go to Resume Matcher</span>
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

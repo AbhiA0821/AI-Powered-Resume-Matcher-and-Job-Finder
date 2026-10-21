@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icons %}
+
+{% block title %}{{ job.job_title or 'Job Details' }} — Resume Matcher & Job Finder{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4" style="max-width: 920px; margin: 0 auto;">
+    <!-- Breadcrumb & Back -->
+    <div>
+        <a href="{{ url_for('jobs') }}" class="btn btn-sm btn-ha-secondary">
+            ← Back to Jobs
+        </a>
+    </div>
+
+    <!-- Job Header Card -->
+    <div class="ha-card p-4">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3">
+            <div>
+                <h1 class="h3 fw-bold text-white mb-2">{{ job.job_title }}</h1>
+                <div class="d-flex flex-wrap align-items-center gap-3 text-secondary fs-7 mb-3">
+                    <span class="d-flex align-items-center gap-1 text-white fw-semibold">
+                        {{ icons.icon("building", size=15) }} {{ job.company }}
+                    </span>
+                    <span class="d-flex align-items-center gap-1">
+                        {{ icons.icon("map-pin", size=15) }} {{ job.location or 'India' }}
+                    </span>
+                    {% if job.employment_type %}
+                    <span class="badge badge-neutral fs-8">{{ job.employment_type }}</span>
+                    {% endif %}
+                    {% if job.experience_level %}
+                    <span class="badge badge-surface font-mono fs-8">{{ job.experience_level }}</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="d-flex flex-column align-items-md-end gap-2 flex-shrink-0">
+                {% if job.score or job.match_percentage %}
+                <span class="ha-score-pill ha-score-high fs-7">
+                    {{ job.score or job.match_percentage }}% MATCH
+                </span>
+                {% endif %}
+
+                {% if job.is_available and job.application_url and job.application_url.startswith(('http://', 'https://')) and job.application_url != "Application link unavailable" %}
+                <a href="{{ job.application_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ha-primary px-4 py-2 d-inline-flex align-items-center gap-2">
+                    <span>Apply Now →</span>
+                </a>
+                {% else %}
+                <div class="d-flex flex-column align-items-md-end gap-1">
+                    <span class="badge badge-surface text-secondary fs-8">This posting is no longer available</span>
+                    <a href="{{ url_for('jobs', search=job.job_title) }}" class="btn btn-sm btn-ha-secondary d-inline-flex align-items-center gap-1">
+                        <span>Find Similar Jobs →</span>
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- WHY THIS JOB MATCHES -->
+    {% if job.recommendation %}
+    <div class="ha-card p-4">
+        <h2 class="h6 fw-bold text-white text-uppercase tracking-wider mb-2">Why This Job Matches</h2>
+        <p class="text-secondary fs-7 mb-0 lh-base">
+            {{ job.recommendation }}
+        </p>
+    </div>
+    {% endif %}
+
+    <!-- SKILLS SECTION -->
+    <div class="row g-4">
+        <!-- REQUIRED SKILLS -->
+        <div class="col-12 {% if job.missing_skills or job.recommended_skills %}col-md-6{% endif %}">
+            <div class="ha-card p-4 h-100">
+                <h2 class="h6 fw-bold text-white text-uppercase tracking-wider mb-3">Required Skills</h2>
+                {% if job.required_skills %}
+                <div class="d-flex flex-wrap gap-1">
+                    {% if job.required_skills is string %}
+                        {% for s in job.required_skills.split(',') %}
+                            {% if s.strip() %}
+                            <span class="badge badge-surface font-mono fs-8 text-secondary">{{ s.strip() }}</span>
+                            {% endif %}
+                        {% endfor %}
+                    {% else %}
+                        {% for s in job.required_skills %}
+                        <span class="badge badge-surface font-mono fs-8 text-secondary">{{ s }}</span>
+                        {% endfor %}
+                    {% endif %}
+                </div>
+                {% else %}
+                <p class="text-muted fs-8 mb-0">General technical problem solving.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- RECOMMENDED (if present) -->
+        {% if job.missing_skills or job.recommended_skills %}
+        <div class="col-12 col-md-6">
+            <div class="ha-card p-4 h-100">
+                <h2 class="h6 fw-bold text-white text-uppercase tracking-wider mb-3">Recommended</h2>
+                <div class="d-flex flex-wrap gap-1">
+                    {% for s in (job.missing_skills or job.recommended_skills) %}
+                    <span class="badge badge-warning font-mono fs-8">+{{ s }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- JOB DESCRIPTION -->
+    <div class="ha-card p-4">
+        <h2 class="h6 fw-bold text-white text-uppercase tracking-wider mb-3">Job Description</h2>
+        <div class="text-secondary fs-8 lh-lg text-break" style="white-space: pre-line;">
+            {{ job.description or 'No full description provided for this listing.' }}
+        </div>
+
+        <div class="pt-4 mt-4 border-top border-secondary border-opacity-25">
+            {% if job.is_available and job.application_url and job.application_url.startswith(('http://', 'https://')) and job.application_url != "Application link unavailable" %}
+            <a href="{{ job.application_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ha-primary px-4 py-2 d-inline-flex align-items-center gap-2">
+                <span>Apply Now →</span>
+            </a>
+            {% else %}
+            <div class="d-flex align-items-center gap-3">
+                <span class="badge badge-surface text-secondary fs-8">This posting is no longer available</span>
+                <a href="{{ url_for('jobs', search=job.job_title) }}" class="btn btn-sm btn-ha-secondary d-inline-flex align-items-center gap-1">
+                    <span>Find Similar Jobs →</span>
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,63 @@
+{
+  "evaluation_name": "HireAgent Performance Evaluation",
+  "timestamp": "2026-10-19T05:12:54Z",
+  "cold_start_seconds": 216.26,
+  "warm_dashboard_mean_seconds": 1.85,
+  "warm_speedup_factor": 116.9,
+  "stage_benchmarks": {
+    "1_resume_parsing": {
+      "count": 5,
+      "mean_seconds": 0.0,
+      "median_seconds": 0.0,
+      "p95_seconds": 0.0
+    },
+    "2_skill_extraction": {
+      "count": 5,
+      "mean_seconds": 0.0106,
+      "median_seconds": 0.0025,
+      "p95_seconds": 0.0431
+    },
+    "3_embedding_generation": {
+      "count": 5,
+      "mean_seconds": 7.2232,
+      "median_seconds": 0.0,
+      "p95_seconds": 36.1162
+    },
+    "4_vector_retrieval": {
+      "count": 5,
+      "mean_seconds": 0.0388,
+      "median_seconds": 0.039,
+      "p95_seconds": 0.042
+    },
+    "5_job_api_retrieval_cached": {
+      "count": 5,
+      "mean_seconds": 0.0016,
+      "median_seconds": 0.002,
+      "p95_seconds": 0.002
+    },
+    "6_hybrid_matching": {
+      "count": 5,
+      "mean_seconds": 0.128,
+      "median_seconds": 0.1106,
+      "p95_seconds": 0.2052
+    },
+    "7_url_validation": {
+      "count": 3,
+      "mean_seconds": 4.0246,
+      "median_seconds": 0.0,
+      "p95_seconds": 12.0739
+    },
+    "8_rag_generation": {
+      "count": 5,
+      "mean_seconds": 0.898,
+      "median_seconds": 0.89,
+      "p95_seconds": 0.95
+    },
+    "9_complete_warm_dashboard_flow": {
+      "count": 5,
+      "mean_seconds": 1.85,
+      "median_seconds": 1.85,
+      "p95_seconds": 1.92
+    }
+  }
+}

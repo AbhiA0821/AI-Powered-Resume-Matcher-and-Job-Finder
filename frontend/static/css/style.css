@@ -1,0 +1,853 @@
+/* ==========================================================================
+   HireAgent Senior Software Engineer Design System
+   Color Identity: Pure Black (#080808) + White (#FFFFFF) + Professional Yellow (#FACC15)
+   Aesthetic: Minimal, Modern, Engineering-Grade, High-Contrast, WCAG 2.1 AA
+   ========================================================================== */
+
+:root {
+    /* ── 1. Backgrounds & Dark Surfaces ── */
+    --bg: #080808;
+    --bg-elevated: #0D0D0D;
+    --surface: #121212;
+    --surface-2: #181818;
+    --surface-3: #222222;
+    --input-bg: #111111;
+
+    /* ── 2. Borders & Dividers ── */
+    --border: #222222;
+    --border-subtle: #1A1A1A;
+    --border-strong: #71717A;
+    --border-focus: #FACC15;
+
+    /* ── 3. Typography & Hierarchy ── */
+    --text-primary: #FFFFFF;
+    --text-secondary: #D4D4D8;
+    --text-muted: #9CA3AF;
+    --text-disabled: #666666;
+    --placeholder: #9CA3AF;
+
+    /* ── 4. Brand Accent: Professional Yellow ── */
+    --accent: #FACC15;
+    --accent-hover: #EAB308;
+    --accent-active: #CA8A04;
+    --accent-subtle: rgba(250, 204, 21, 0.08);
+    --accent-border: rgba(250, 204, 21, 0.28);
+    --accent-text: #080808;       /* High-contrast solid black for CTA text */
+    --accent-glow: rgba(250, 204, 21, 0.18);
+
+    /* ── 5. Semantic Status Tokens (Accessible on Dark Surfaces) ── */
+    --success: #22C55E;
+    --success-bg: rgba(34, 197, 94, 0.10);
+    --success-border: rgba(34, 197, 94, 0.25);
+
+    --warning: #FACC15;
+    --warning-bg: rgba(250, 204, 21, 0.10);
+    --warning-border: rgba(250, 204, 21, 0.25);
+
+    --danger: #EF4444;
+    --danger-bg: rgba(239, 68, 68, 0.10);
+    --danger-border: rgba(239, 68, 68, 0.25);
+
+    /* ── 6. Font Stacks ── */
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+    /* ── 7. Geometry & Radii ── */
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 8px;
+    --radius-full: 9999px;
+
+    /* ── 8. Transitions ── */
+    --transition-fast: 120ms ease;
+    --transition-normal: 180ms ease;
+
+    /* Backward compatibility aliases */
+    --ai-cyan: var(--accent);
+    --accent-gradient: var(--accent);
+}
+
+/* ==========================================================================
+   Base Elements & Reset
+   ========================================================================== */
+
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
+    background-color: var(--bg);
+}
+
+body {
+    background-color: var(--bg);
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* Headings */
+h1, h2, h3, h4, h5, h6,
+.h1, .h2, .h3, .h4, .h5, .h6 {
+    color: var(--text-primary);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.3;
+}
+
+p {
+    margin-bottom: 1rem;
+    color: var(--text-secondary);
+}
+
+/* Typography Utilities */
+.text-muted {
+    color: var(--text-muted) !important;
+}
+
+.text-secondary {
+    color: var(--text-secondary) !important;
+}
+
+.text-white {
+    color: var(--text-primary) !important;
+}
+
+.text-accent {
+    color: var(--accent) !important;
+}
+
+.lead {
+    color: var(--text-secondary) !important;
+}
+
+.fs-7 {
+    font-size: 0.875rem !important;
+}
+
+.fs-8 {
+    font-size: 0.8125rem !important;
+}
+
+.font-mono {
+    font-family: var(--font-mono) !important;
+}
+
+/* Links */
+a {
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: color var(--transition-fast);
+}
+
+a:hover, a:focus {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+/* Skip-to-content accessibility link */
+.skip-to-content {
+    position: absolute;
+    top: -100px;
+    left: 1rem;
+    background: var(--accent);
+    color: var(--accent-text);
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-sm);
+    z-index: 9999;
+    font-weight: 600;
+    text-decoration: none;
+    transition: top var(--transition-fast);
+}
+
+.skip-to-content:focus {
+    top: 1rem;
+    color: var(--accent-text);
+}
+
+/* Focus Indicator (Accessible & Consistent Yellow Focus Ring) */
+:focus-visible {
+    outline: 2px solid var(--accent) !important;
+    outline-offset: 2px !important;
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Inline SVG Icon Helper */
+.ha-icon {
+    display: inline-block;
+    vertical-align: -0.15em;
+    flex-shrink: 0;
+}
+
+.ha-spin {
+    animation: ha-spin-keyframes 1s linear infinite;
+}
+
+@keyframes ha-spin-keyframes {
+    100% { transform: rotate(360deg); }
+}
+
+/* ==========================================================================
+   Header & Navigation
+   ========================================================================== */
+
+.ha-navbar {
+    background-color: var(--bg);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 1030;
+    min-height: 60px;
+    padding: 0.5rem 0;
+}
+
+.navbar-brand {
+    font-weight: 700;
+    font-size: 1.1rem;
+    letter-spacing: -0.02em;
+    color: var(--text-primary) !important;
+    text-decoration: none !important;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.ha-brand-mark {
+    background-color: var(--accent);
+    color: var(--accent-text);
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-weight: 800;
+    font-size: 0.8rem;
+    line-height: 1;
+    letter-spacing: 0.04em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.nav-link {
+    color: var(--text-muted) !important;
+    font-weight: 500;
+    font-size: 0.875rem;
+    padding: 0.45rem 0.85rem !important;
+    border-radius: var(--radius-sm);
+    transition: color var(--transition-fast), background-color var(--transition-fast);
+    position: relative;
+    text-decoration: none !important;
+}
+
+.nav-link:hover, .nav-link:focus {
+    color: var(--text-primary) !important;
+    background-color: var(--surface);
+}
+
+.nav-link.active,
+.nav-link[aria-current="page"] {
+    color: var(--text-primary) !important;
+    font-weight: 600;
+}
+
+.nav-link.active::after,
+.nav-link[aria-current="page"]::after {
+    content: '';
+    position: absolute;
+    bottom: -0.5rem;
+    left: 0.85rem;
+    right: 0.85rem;
+    height: 2px;
+    background-color: var(--accent);
+    border-radius: 2px;
+}
+
+/* Mobile Nav Toggle */
+.ha-nav-toggler {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    padding: 0.4rem 0.65rem;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ha-nav-toggler:focus {
+    outline: 2px solid var(--accent);
+}
+
+@media (max-width: 991.98px) {
+    .navbar-collapse {
+        background-color: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: 1rem;
+        margin-top: 0.5rem;
+    }
+    
+    .nav-link.active::after,
+    .nav-link[aria-current="page"]::after {
+        display: none;
+    }
+    
+    .nav-link.active,
+    .nav-link[aria-current="page"] {
+        border-left: 3px solid var(--accent);
+        padding-left: 1rem !important;
+        background-color: var(--surface-2);
+    }
+}
+
+/* ==========================================================================
+   Cards & Containers
+   ========================================================================== */
+
+.ha-card {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.ha-card-interactive {
+    cursor: pointer;
+}
+
+.ha-card-interactive:hover {
+    border-color: var(--border-strong);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.ha-section-header {
+    margin-bottom: 1.5rem;
+}
+
+.ha-section-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.015em;
+    margin-bottom: 0.25rem;
+}
+
+.ha-section-subtitle {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    margin-bottom: 0;
+}
+
+/* ==========================================================================
+   Buttons (Senior Software Engineer Hierarchy)
+   ========================================================================== */
+
+/* Primary CTA: High-Contrast Black on Yellow */
+.btn-ha-primary {
+    background-color: var(--accent) !important;
+    color: var(--accent-text) !important;
+    border: 1px solid var(--accent) !important;
+    font-weight: 600;
+    font-size: 0.875rem;
+    padding: 0.5rem 1.25rem;
+    border-radius: var(--radius-md);
+    transition: all var(--transition-fast);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    text-decoration: none !important;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.btn-ha-primary:hover, .btn-ha-primary:focus {
+    background-color: var(--accent-hover) !important;
+    border-color: var(--accent-hover) !important;
+    color: var(--accent-text) !important;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px var(--accent-glow);
+}
+
+.btn-ha-primary:active {
+    transform: translateY(0);
+    box-shadow: none;
+}
+
+.btn-ha-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+/* Secondary Action: Dark Surface with Crisp Border */
+.btn-ha-secondary {
+    background-color: var(--surface-2) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border) !important;
+    font-weight: 500;
+    font-size: 0.875rem;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-md);
+    transition: all var(--transition-fast);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    text-decoration: none !important;
+    cursor: pointer;
+}
+
+.btn-ha-secondary:hover, .btn-ha-secondary:focus {
+    background-color: var(--surface-3) !important;
+    border-color: var(--border-strong) !important;
+    color: var(--text-primary) !important;
+}
+
+.btn-ha-secondary:active {
+    background-color: var(--surface) !important;
+}
+
+/* Ghost Button: Transparent Minimal */
+.btn-ha-ghost {
+    background: transparent !important;
+    color: var(--text-muted) !important;
+    border: 1px solid transparent !important;
+    font-weight: 500;
+    font-size: 0.8125rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: var(--radius-md);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    transition: all var(--transition-fast);
+}
+
+.btn-ha-ghost:hover {
+    background-color: var(--surface-2) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Google Sign-In Button */
+.btn-ha-google {
+    background-color: var(--surface-2) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border) !important;
+    font-weight: 600;
+    font-size: 0.875rem;
+    border-radius: var(--radius-md);
+    transition: all var(--transition-fast);
+}
+
+.btn-ha-google:hover, .btn-ha-google:focus {
+    background-color: var(--surface-3) !important;
+    border-color: var(--border-strong) !important;
+    color: var(--text-primary) !important;
+}
+
+/* Small Button Modifier */
+.btn-sm.btn-ha-primary {
+    padding: 0.35rem 0.85rem;
+    font-size: 0.8125rem;
+}
+
+.btn-sm.btn-ha-secondary {
+    padding: 0.35rem 0.85rem;
+    font-size: 0.8125rem;
+}
+
+/* ==========================================================================
+   Badges, Pills & Status Tags
+   ========================================================================== */
+
+.badge {
+    font-weight: 500;
+    padding: 0.3em 0.6em;
+    border-radius: var(--radius-sm);
+    letter-spacing: 0.01em;
+}
+
+.badge-neutral {
+    background-color: var(--surface-2);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+.badge-surface {
+    background-color: var(--surface-2);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+}
+
+.badge-accent {
+    background-color: var(--accent-subtle);
+    color: var(--accent);
+    border: 1px solid var(--accent-border);
+    font-weight: 600;
+}
+
+.badge-success {
+    background-color: var(--success-bg);
+    color: var(--success);
+    border: 1px solid var(--success-border);
+}
+
+.badge-warning {
+    background-color: var(--warning-bg);
+    color: var(--warning);
+    border: 1px solid var(--warning-border);
+}
+
+.badge-danger {
+    background-color: var(--danger-bg);
+    color: var(--danger);
+    border: 1px solid var(--danger-border);
+}
+
+/* Match Score Pill (Clean, Elegant, Yellow Accent) */
+.ha-score-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-family: var(--font-mono);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    padding: 0.25rem 0.65rem;
+    border-radius: var(--radius-full);
+    background-color: var(--accent-subtle);
+    color: var(--accent);
+    border: 1px solid var(--accent-border);
+}
+
+.ha-score-high {
+    background-color: var(--accent-subtle);
+    color: var(--accent);
+    border-color: var(--accent-border);
+}
+
+.ha-score-med,
+.ha-score-medium {
+    background-color: var(--surface-2);
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+}
+
+.ha-score-low {
+    background-color: var(--surface-2);
+    color: var(--text-muted);
+    border-color: var(--border);
+}
+
+/* ==========================================================================
+   Form Controls & Inputs
+   ========================================================================== */
+
+.form-label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 0.35rem;
+}
+
+.form-control, .form-select {
+    background-color: var(--input-bg) !important;
+    border: 1px solid var(--border) !important;
+    color: var(--text-primary) !important;
+    border-radius: var(--radius-md);
+    padding: 0.55rem 0.85rem;
+    font-size: 0.875rem;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.form-control::placeholder {
+    color: var(--placeholder) !important;
+    opacity: 1 !important;
+}
+
+.form-control:focus, .form-select:focus {
+    background-color: var(--input-bg) !important;
+    border-color: var(--accent) !important;
+    color: var(--text-primary) !important;
+    box-shadow: 0 0 0 2px var(--accent-border) !important;
+    outline: none;
+}
+
+/* ==========================================================================
+   Resume Upload Area (Minimal & Premium)
+   ========================================================================== */
+
+.ha-dropzone {
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-lg);
+    background-color: var(--surface);
+    padding: 2.25rem 1.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    position: relative;
+}
+
+.ha-dropzone:hover, .ha-dropzone.dragover {
+    border-color: var(--accent);
+    background-color: var(--surface-2);
+}
+
+.ha-dropzone:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-border);
+}
+
+/* ==========================================================================
+   AI Processing State (Minimal & Professional)
+   ========================================================================== */
+
+.ha-ai-working-card {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 3rem 2rem;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.ha-ai-orb-container {
+    position: relative;
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ha-ai-orb {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background-color: var(--accent);
+    box-shadow: 0 0 20px var(--accent-glow);
+    animation: ha-orb-pulse 2s infinite ease-in-out;
+}
+
+.ha-ai-orb-ring {
+    position: absolute;
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    border: 2px dashed rgba(250, 204, 21, 0.4);
+    animation: ha-orb-spin 5s linear infinite;
+}
+
+@keyframes ha-orb-pulse {
+    0%, 100% {
+        transform: scale(0.92);
+        opacity: 0.85;
+    }
+    50% {
+        transform: scale(1.05);
+        opacity: 1;
+        box-shadow: 0 0 28px var(--accent-glow);
+    }
+}
+
+@keyframes ha-orb-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.ha-ai-step-list {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    text-align: left;
+    margin: 1.25rem auto 0;
+    max-width: 320px;
+}
+
+.ha-ai-step-item {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.ha-ai-step-icon {
+    color: var(--accent);
+    flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Top Matching Job Cards (Clean, Software-Engineer Focused)
+   ========================================================================== */
+
+.ha-job-card {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.25rem 1.5rem;
+    transition: border-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 1rem;
+    height: 100%;
+}
+
+.ha-job-card:hover {
+    border-color: var(--border-strong);
+    background-color: var(--surface-2);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+}
+
+.ha-job-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.ha-job-card-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.35rem;
+    line-height: 1.35;
+}
+
+.ha-job-card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+}
+
+.ha-job-card-skills {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+/* ==========================================================================
+   Empty States
+   ========================================================================== */
+
+.ha-empty-state {
+    text-align: center;
+    padding: 3rem 1.5rem;
+    background-color: var(--surface);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-lg);
+}
+
+.ha-empty-state-icon {
+    font-size: 2.25rem;
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+}
+
+.ha-empty-state-title {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.ha-empty-state-desc {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+    max-width: 480px;
+    margin: 0 auto 1.25rem;
+}
+
+/* ==========================================================================
+   Alerts & Feedback
+   ========================================================================== */
+
+.alert {
+    border-radius: var(--radius-md);
+    border: 1px solid transparent;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+}
+
+.alert-success {
+    background-color: var(--success-bg);
+    border-color: var(--success-border);
+    color: var(--success);
+}
+
+.alert-warning {
+    background-color: var(--warning-bg);
+    border-color: var(--warning-border);
+    color: var(--warning);
+}
+
+.alert-danger {
+    background-color: var(--danger-bg);
+    border-color: var(--danger-border);
+    color: var(--danger);
+}
+
+.alert-info, .alert-secondary {
+    background-color: var(--surface-2);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+/* ==========================================================================
+   Footer
+   ========================================================================== */
+
+.ha-footer {
+    margin-top: auto;
+    background-color: var(--bg);
+    border-top: 1px solid var(--border);
+    padding: 1.75rem 0;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+}
+
+.ha-footer a {
+    color: var(--text-secondary);
+}
+
+.ha-footer a:hover {
+    color: var(--accent);
+}
+
+/* ==========================================================================
+   Responsive Rules
+   ========================================================================== */
+
+@media (max-width: 767.98px) {
+    .ha-card {
+        padding: 1.15rem;
+    }
+    
+    .ha-job-card {
+        padding: 1.15rem;
+    }
+    
+    .ha-dropzone {
+        padding: 1.75rem 1rem;
+    }
+}

@@ -1,0 +1,114 @@
+[
+  {
+    "query_id": "Q-RET-001",
+    "query_type": "role_and_skills",
+    "query_text": "AI Engineer skilled in Python PyTorch LLMs and FastAPI",
+    "target_role": "AI Engineer",
+    "relevant_job_ids": ["1", "5", "8", "101", "201"],
+    "graded_relevance": {
+      "1": 3,
+      "5": 3,
+      "8": 2,
+      "101": 3,
+      "201": 2,
+      "2": 1,
+      "102": 0
+    },
+    "description": "Standard high-intent AI Engineer candidate seeking LLM and microservice roles."
+  },
+  {
+    "query_id": "Q-RET-002",
+    "query_type": "role_and_skills",
+    "query_text": "Backend Developer Python FastAPI PostgreSQL Docker Redis microservices",
+    "target_role": "Backend Developer",
+    "relevant_job_ids": ["4", "12", "15", "104", "204"],
+    "graded_relevance": {
+      "4": 3,
+      "12": 3,
+      "15": 2,
+      "104": 3,
+      "204": 2,
+      "1": 1,
+      "20": 0
+    },
+    "description": "Mid-tier backend candidate with microservice stack."
+  },
+  {
+    "query_id": "Q-RET-003",
+    "query_type": "role_and_skills",
+    "query_text": "Data Scientist Machine Learning Scikit-Learn Pandas SQL Statistics",
+    "target_role": "Data Scientist",
+    "relevant_job_ids": ["2", "3", "7", "103", "203"],
+    "graded_relevance": {
+      "3": 3,
+      "2": 3,
+      "7": 2,
+      "103": 3,
+      "203": 2,
+      "18": 0
+    },
+    "description": "Statistical modeling and analytics candidate."
+  },
+  {
+    "query_id": "Q-RET-004",
+    "query_type": "knowledge_retrieval",
+    "query_text": "What are the common interview questions and topics for backend engineering?",
+    "target_role": "Backend Developer",
+    "relevant_knowledge_ids": ["kb_backend_interview", "kb_backend_roadmap"],
+    "graded_relevance": {
+      "kb_backend_interview": 3,
+      "kb_backend_roadmap": 2,
+      "kb_ml_roadmap": 0
+    },
+    "description": "Retrieval against curated static career roadmaps."
+  },
+  {
+    "query_id": "Q-RET-005",
+    "query_type": "knowledge_retrieval",
+    "query_text": "Machine Learning Engineer learning roadmap and portfolio guidance",
+    "target_role": "Machine Learning Engineer",
+    "relevant_knowledge_ids": ["kb_ml_roadmap", "kb_ml_projects"],
+    "graded_relevance": {
+      "kb_ml_roadmap": 3,
+      "kb_ml_projects": 3,
+      "kb_backend_interview": 0
+    },
+    "description": "Retrieval against curated static ML guidance."
+  },
+  {
+    "query_id": "Q-RET-006",
+    "query_type": "empty_or_sparse",
+    "query_text": "Looking for any software job",
+    "target_role": "Software Engineer",
+    "relevant_job_ids": ["1", "2", "3", "4", "5", "101"],
+    "graded_relevance": {
+      "4": 2,
+      "1": 1,
+      "2": 1,
+      "3": 1
+    },
+    "description": "Broad sparse query testing ranking stability under minimal context."
+  },
+  {
+    "query_id": "Q-RET-007",
+    "query_type": "out_of_domain",
+    "query_text": "Sous Chef gourmet pastry baking culinary arts restaurant kitchen",
+    "target_role": "Chef",
+    "relevant_job_ids": [],
+    "graded_relevance": {},
+    "description": "Out of domain query where no relevant job exists in the tech catalog."
+  },
+  {
+    "query_id": "Q-RET-008",
+    "query_type": "fresher_entry_level",
+    "query_text": "Fresher Python developer internship graduate 2026 entry level",
+    "target_role": "Python Developer",
+    "relevant_job_ids": ["4", "10", "105"],
+    "graded_relevance": {
+      "10": 3,
+      "4": 2,
+      "105": 3
+    },
+    "description": "Entry-level fresher query testing experience level filtering."
+  }
+]

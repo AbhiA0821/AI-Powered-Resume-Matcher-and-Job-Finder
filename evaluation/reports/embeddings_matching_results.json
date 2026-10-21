@@ -1,0 +1,78 @@
+{
+  "evaluation_name": "HireAgent Embedding and Hybrid Matching Evaluation",
+  "timestamp": "2026-10-19T05:06:24Z",
+  "overall_status": "PASS",
+  "elapsed_seconds": 36.96,
+  "bge_embedding_evaluation": {
+    "status": "PASS",
+    "embedding_dimension": 384,
+    "l2_norm": 1.0,
+    "is_normalized": true,
+    "has_nan_or_inf": false,
+    "empty_input_handled": true,
+    "is_deterministic": true,
+    "semantic_similarity_related": 0.7472,
+    "semantic_similarity_unrelated": 0.4518,
+    "discrimination_gap": 0.2954
+  },
+  "hybrid_matcher_evaluation": {
+    "status": "PASS",
+    "configured_weights": {
+      "skill_weight": 0.4,
+      "semantic_weight": 0.3,
+      "role_weight": 0.15,
+      "exp_weight": 0.1,
+      "knn_weight": 0.05
+    },
+    "weights_sum_to_one": true,
+    "top_1_accuracy": 1.0,
+    "mean_ndcg_at_3": 1.0,
+    "mean_spearman_rho": 1.0,
+    "case_evaluations": [
+      {
+        "status": "PASS",
+        "ndcg_at_3": 1.0,
+        "ndcg_at_5": 1.0,
+        "spearman_rho": 1.0,
+        "total_ranked": 3,
+        "case_id": "MATCH-001",
+        "is_top_match": true,
+        "top_ranked_job": "AI Engineer",
+        "top_score": 93.5
+      },
+      {
+        "status": "PASS",
+        "ndcg_at_3": 1.0,
+        "ndcg_at_5": 1.0,
+        "spearman_rho": 1.0,
+        "total_ranked": 3,
+        "case_id": "MATCH-002",
+        "is_top_match": true,
+        "top_ranked_job": "Senior Python Backend Developer",
+        "top_score": 93.5
+      },
+      {
+        "status": "PASS",
+        "ndcg_at_3": 1.0,
+        "ndcg_at_5": 1.0,
+        "spearman_rho": 1.0,
+        "total_ranked": 2,
+        "case_id": "MATCH-003",
+        "is_top_match": true,
+        "top_ranked_job": "Junior Python Developer",
+        "top_score": 92.9
+      }
+    ]
+  },
+  "weight_recommendation": {
+    "current_weights": {
+      "skill_weight": 0.4,
+      "semantic_weight": 0.3,
+      "role_weight": 0.15,
+      "exp_weight": 0.1,
+      "knn_weight": 0.05
+    },
+    "recommendation": "PRESERVE_CURRENT_WEIGHTS",
+    "justification": "The current 0.40 Skill + 0.30 Semantic + 0.15 Role + 0.10 Exp + 0.05 KNN formulation achieved 100% Top-1 recommendation accuracy (NDCG@3=1.0, Rho=1.0) and cleanly separated fresher candidates from senior architectural roles without artificial distortion."
+  }
+}

@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icons %}
+
+{% block title %}Career Recommendations — Resume Matcher & Job Finder{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4">
+    <div class="ha-section-header">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+            <div>
+                <h1 class="h3 fw-bold text-white mb-1">AI Career Recommendations</h1>
+                <p class="ha-section-subtitle mb-0">Multi-agent intelligence synthesizing role roadmaps, learning priorities, and market demand.</p>
+            </div>
+            <div>
+                <form action="{{ url_for('career_recommendations_page') }}" method="POST">
+                    <button type="submit" class="btn btn-ha-primary px-4 py-2 d-flex align-items-center gap-2">
+                        {{ icons.icon("zap", size=14) }}
+                        <span>Generate Insights Report</span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {% if not has_resume %}
+    <div class="ha-empty-state">
+        <div class="ha-empty-state-icon" aria-hidden="true">{{ icons.icon("compass", size=32) }}</div>
+        <h2 class="ha-empty-state-title">Resume Needed for Career Recommendations</h2>
+        <p class="ha-empty-state-desc">Upload your resume to allow our multi-agent career intelligence to analyze your profile and construct tailored learning directions.</p>
+        <a href="{{ url_for('resume_page') }}" class="btn btn-ha-primary px-4 py-2">Upload Resume</a>
+    </div>
+    {% elif not report %}
+    <div class="ha-empty-state">
+        <div class="ha-empty-state-icon" aria-hidden="true">{{ icons.icon("sparkles", size=32) }}</div>
+        <h2 class="ha-empty-state-title">Ready to Synthesize Insights</h2>
+        <p class="ha-empty-state-desc">Click the button above to generate on-demand multi-agent recommendations tailored to your profile and matching jobs.</p>
+        <form action="{{ url_for('career_recommendations_page') }}" method="POST">
+            <button type="submit" class="btn btn-ha-primary px-4 py-2">Generate Career Insights</button>
+        </form>
+    </div>
+    {% else %}
+
+    <!-- Degraded Mode / Grounding Banner -->
+    {% if report.is_degraded %}
+    <div class="alert alert-warning border-0 d-flex align-items-center gap-2 mb-0" role="alert">
+        <span class="fs-5" aria-hidden="true">{{ icons.icon("alert", size=18) }}</span>
+        <div>
+            <strong>Deterministic Mode Active:</strong> Insights were synthesized directly from local catalog data and the 5-component hybrid matcher to guarantee zero downtime.
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Report Profile Summary Card -->
+    <div class="ha-card">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+            <div>
+                <span class="badge badge-accent mb-2">Target Role: {{ report.target_role }}</span>
+                <h2 class="h5 fw-bold text-white mb-1">Profile Intelligence Summary</h2>
+            </div>
+            {% if report.cached %}
+            <span class="badge badge-neutral">Cached Report</span>
+            {% endif %}
+        </div>
+        <p class="text-muted fs-8 mb-3">{{ report.profile_summary }}</p>
+
+        {% if report.top_skills %}
+        <div>
+            <small class="text-subtle fs-8 d-block text-uppercase fw-semibold mb-1">Top Verified Competencies</small>
+            <div class="d-flex flex-wrap gap-1">
+                {% for s in report.top_skills %}
+                <span class="badge badge-neutral fs-8">{{ s }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Career Directions & Learning Priorities -->
+    <div class="row g-4">
+        <!-- Career Directions -->
+        <div class="col-lg-6">
+            <div class="ha-card h-100">
+                <h2 class="h5 fw-bold text-white mb-3">Recommended Career Directions</h2>
+                {% if report.career_directions %}
+                <ul class="list-unstyled d-flex flex-column gap-3 mb-0">
+                    {% for d in report.career_directions %}
+                    <li class="p-3 rounded bg-surface-2 border border-secondary border-opacity-25 fs-8 text-white">
+                        {{ d }}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted fs-8">General software engineering pathways aligned with your core skills.</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Learning Priorities -->
+        <div class="col-lg-6">
+            <div class="ha-card h-100">
+                <h2 class="h5 fw-bold text-white mb-3">High-Impact Learning Priorities</h2>
+                {% if report.learning_priorities %}
+                <ul class="list-unstyled d-flex flex-column gap-3 mb-0">
+                    {% for p in report.learning_priorities %}
+                    <li class="p-3 rounded bg-surface-2 border border-secondary border-opacity-25 fs-8 text-white d-flex align-items-start gap-2">
+                        <span class="text-warning fw-bold">#{{ loop.index }}</span>
+                        <span>{{ p }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="text-muted fs-8">Continue building hands-on projects with your verified tech stack.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Jobs Grounding Table -->
+    {% if report.top_jobs %}
+    <div class="ha-card">
+        <h2 class="h5 fw-bold text-white mb-3">Top Matched Positions Evaluated</h2>
+        <div class="d-flex flex-column gap-3">
+            {% for job in report.top_jobs %}
+            <div class="p-3 rounded bg-surface-2 border border-secondary border-opacity-25">
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-2">
+                    <div>
+                        <h3 class="h6 fw-bold text-white mb-0">{{ job.job_title }}</h3>
+                        <small class="text-secondary d-flex align-items-center gap-2 mt-1">
+                            <span>{{ icons.icon("building", size=12) }} {{ job.company }}</span>
+                            <span>•</span>
+                            <span>Match Score: <strong class="text-info font-mono">{{ job.match_percentage }}%</strong></span>
+                        </small>
+                    </div>
+                    {% if job.apply_url and job.apply_url != "Application link unavailable" %}
+                    <a href="{{ job.apply_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ha-primary d-inline-flex align-items-center gap-1">
+                        <span>Apply</span>
+                        {{ icons.icon("link", size=12) }}
+                    </a>
+                    {% endif %}
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-6">
+                        <small class="text-success d-block fs-8 fw-semibold mb-1">Matched Skills</small>
+                        <div class="d-flex flex-wrap gap-1">
+                            {% for s in job.matched_skills %}
+                            <span class="badge badge-neutral fs-8">{{ s }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <small class="text-warning d-block fs-8 fw-semibold mb-1">Missing Skills to Target</small>
+                        <div class="d-flex flex-wrap gap-1">
+                            {% for s in job.missing_skills %}
+                            <span class="badge badge-warning fs-8">{{ s }}</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Caveat Footer Note -->
+    <div class="p-3 rounded bg-surface-2 border border-secondary border-opacity-25 text-center text-subtle fs-8">
+        {{ report.caveats or 'AI-generated insights. Verify company requirements before applying.' }}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

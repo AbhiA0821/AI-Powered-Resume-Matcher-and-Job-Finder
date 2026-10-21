@@ -1,27 +1,45 @@
-streamlit
+# HireAgent Dependencies
+
+# Core & Web
+fastapi
+uvicorn
+flask
+gunicorn
+waitress
+requests
+python-multipart
+
+# Data & ML
 pandas
 numpy
 scikit-learn
-plotly
-pdfplumber
-python-docx
-requests
+sentence-transformers
+qdrant-client
 
-# HireAgent Backend Dependencies
-fastapi
-uvicorn
+# AI & LLM Orchestration
+google-genai
+groq
+langgraph
+langchain-core
+crewai==1.15.23
+litellm
+
+# Document Processing
+pymupdf
+pypdf
+python-docx
+pdfplumber
+
+# Database & Auth
 sqlalchemy
 alembic
 pymysql
+libsql>=0.1.11
 pydantic
 pydantic-settings
 pyjwt
 passlib
-firebase-admin
-pymupdf
-pypdf
-python-multipart
 bcrypt
 email-validator
-sentence-transformers
-qdrant-client
+firebase-admin
+python-dotenv

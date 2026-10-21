@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% from "_icons.html" import icon %}
+
+{% block title %}AI-Powered Resume Matcher and Job Finder{% endblock %}
+
+{% block content %}
+<div class="py-3">
+    <!-- Hero Section -->
+    <section class="ha-card text-center py-5 mb-5" aria-labelledby="hero-title">
+        <div class="row justify-content-center">
+            <div class="col-lg-9">
+                <div class="d-inline-flex align-items-center gap-2 mb-2">
+                    <span class="ha-brand-mark">RESUME MATCHER</span>
+                    <span class="text-muted fs-8 font-mono tracking-wider">& JOB FINDER</span>
+                </div>
+                <div>
+                    <span class="badge badge-accent mb-3 px-3 py-1 fs-8 font-mono">Your AI-Powered Career Intelligence</span>
+                </div>
+                <h1 id="hero-title" class="display-6 fw-bold mb-3 text-white">Find the jobs that actually match your skills.</h1>
+                <p class="lead text-secondary mb-4 fs-6 mx-auto" style="max-width: 680px;">
+                    Upload your resume and let our AI matching engine discover relevant opportunities based on verified technical competencies and real job listings.
+                </p>
+                <div class="d-flex justify-content-center gap-3">
+                    <a href="{{ url_for('register') }}" class="btn btn-ha-primary px-4 py-2">Get Started →</a>
+                    <a href="{{ url_for('login') }}" class="btn btn-ha-secondary px-4 py-2">Sign In</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section id="how-it-works" class="mb-5" aria-labelledby="how-it-works-title">
+        <div class="ha-section-header text-center mb-4">
+            <h2 id="how-it-works-title" class="ha-section-title">How Resume Matcher & Job Finder Works</h2>
+            <p class="ha-section-subtitle">A straightforward matching workflow built for software engineers and technology professionals.</p>
+        </div>
+        <div class="row g-4">
+            <div class="col-md-3">
+                <div class="ha-card h-100">
+                    <div class="ha-score-pill mb-3">01</div>
+                    <h3 class="h6 fw-bold text-white mb-2">Resume Intelligence</h3>
+                    <p class="text-secondary fs-8 mb-0">Upload your PDF or DOCX resume. Local sanitization and skill extraction identify your competencies.</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="ha-card h-100">
+                    <div class="ha-score-pill mb-3">02</div>
+                    <h3 class="h6 fw-bold text-white mb-2">Set Preferences</h3>
+                    <p class="text-secondary fs-8 mb-0">Specify target roles, locations, or companies to refine matching across opportunities.</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="ha-card h-100">
+                    <div class="ha-score-pill mb-3">03</div>
+                    <h3 class="h6 fw-bold text-white mb-2">Hybrid Matching</h3>
+                    <p class="text-secondary fs-8 mb-0">Evaluates skills, semantic relevance, role alignment, and experience against live listings.</p>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="ha-card h-100">
+                    <div class="ha-score-pill mb-3">04</div>
+                    <h3 class="h6 fw-bold text-white mb-2">Apply Directly</h3>
+                    <p class="text-secondary fs-8 mb-0">Review transparent match explanations and apply directly through real employer postings.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Core Features Grid -->
+    <section id="features" class="mb-5" aria-labelledby="features-title">
+        <div class="ha-section-header text-center mb-4">
+            <h2 id="features-title" class="ha-section-title">Core Features</h2>
+            <p class="ha-section-subtitle">Intelligent matching built with production-grade engineering.</p>
+        </div>
+        <div class="row g-4">
+            <div class="col-md-6">
+                <div class="ha-card h-100">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <span class="text-accent">{{ icon('document', size=18) }}</span>
+                        <h3 class="h6 fw-bold text-white mb-0">Resume Intelligence</h3>
+                    </div>
+                    <p class="text-secondary fs-8 mb-0">Extracts verified skills, experience, and role alignment from your resume without manual data entry.</p>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="ha-card h-100">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <span class="text-accent">{{ icon('search', size=18) }}</span>
+                        <h3 class="h6 fw-bold text-white mb-0">Live Job Discovery</h3>
+                    </div>
+                    <p class="text-secondary fs-8 mb-0">Discovers active job opportunities across tech hubs with direct, verified application links.</p>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="ha-card h-100">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <span class="text-accent">{{ icon('target', size=18) }}</span>
+                        <h3 class="h6 fw-bold text-white mb-0">Hybrid Matching</h3>
+                    </div>
+                    <p class="text-secondary fs-8 mb-0">Multi-factor scoring evaluates both direct skill overlap and semantic conceptual alignment.</p>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="ha-card h-100">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <span class="text-accent">{{ icon('check', size=18) }}</span>
+                        <h3 class="h6 fw-bold text-white mb-0">Direct Applications</h3>
+                    </div>
+                    <p class="text-secondary fs-8 mb-0">Skip aggregator redirects — each recommendation links straight to verified company career pages.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}

@@ -1,0 +1,92 @@
+[
+  {
+    "role": "AI Engineer / Machine Learning Engineer",
+    "overview": "Designs, develops, and deploys machine learning models and AI pipelines for production systems.",
+    "core_skills": ["Python", "PyTorch", "TensorFlow", "FastAPI", "SQL", "Docker", "scikit-learn", "Hugging Face"],
+    "learning_path": [
+      "1. Master Python fundamentals and data manipulation (NumPy, Pandas).",
+      "2. Learn classical Machine Learning algorithms (Linear Models, Trees, Ensembles, Clustering).",
+      "3. Deep Learning fundamentals (Neural Networks, PyTorch/TensorFlow, Backpropagation).",
+      "4. Specialized Architectures: Transformers, LLM fine-tuning, RAG (Retrieval Augmented Generation).",
+      "5. Production Engineering: API development with FastAPI, containerization with Docker, vector databases, model deployment."
+    ],
+    "beginner_projects": [
+      "Resume parser & matcher using sentence transformers and vector similarity.",
+      "End-to-end RAG question answering pipeline on custom documentation.",
+      "Image classifier or sentiment analysis API packaged in Docker."
+    ],
+    "key_interview_topics": ["Bias-variance tradeoff", "Attention mechanisms in Transformers", "Vector indexing & cosine similarity", "Overfitting mitigation techniques"]
+  },
+  {
+    "role": "Python Backend Developer",
+    "overview": "Builds scalable, maintainable server-side applications, REST/GraphQL APIs, and database integrations.",
+    "core_skills": ["Python", "FastAPI", "Django", "Flask", "PostgreSQL", "Redis", "Docker", "SQLAlchemy", "Git"],
+    "learning_path": [
+      "1. Advanced Python (OOP, generators, decorators, async/await, typing).",
+      "2. Relational databases: SQL queries, indexing, transactions, ACID properties.",
+      "3. Web frameworks: FastAPI for async microservices or Django for monolithic applications.",
+      "4. Caching & Message Queues: Redis, Celery, RabbitMQ.",
+      "5. System Design basics: Rate limiting, authentication (JWT/OAuth2), CI/CD pipelines."
+    ],
+    "beginner_projects": [
+      "RESTful API with JWT authentication and role-based access control.",
+      "Task management service with background email processing via Redis queues.",
+      "URL shortener with analytics and Redis caching."
+    ],
+    "key_interview_topics": ["AsyncIO event loop vs multi-threading", "REST API status codes & idempotency", "Database indexing & N+1 queries", "JWT security & token expiry"]
+  },
+  {
+    "role": "Full Stack Developer",
+    "overview": "Develops both client-facing web interfaces and backend services connecting databases.",
+    "core_skills": ["JavaScript", "TypeScript", "HTML5", "CSS3", "React", "Python / Node.js", "SQL", "REST APIs", "Git"],
+    "learning_path": [
+      "1. Web fundamentals: Semantic HTML5, CSS layout (Flexbox/Grid), responsive design.",
+      "2. Modern JavaScript/TypeScript: ES6+, DOM manipulation, async fetch.",
+      "3. Frontend UI Framework: Component architecture, state management, routing.",
+      "4. Backend API development: Node.js/Express or Python/FastAPI.",
+      "5. Database management and cloud deployment."
+    ],
+    "beginner_projects": [
+      "Interactive career dashboard with resume upload and real-time status updates.",
+      "E-commerce storefront with cart state and mock payment integration.",
+      "Collaborative markdown notes app with real-time sync."
+    ],
+    "key_interview_topics": ["State management principles", "Cross-Origin Resource Sharing (CORS)", "DOM vs Virtual DOM", "Responsive design & accessibility (a11y)"]
+  },
+  {
+    "role": "Data Scientist",
+    "overview": "Extracts insights from structured and unstructured data using statistical modeling, exploratory analysis, and ML.",
+    "core_skills": ["Python", "R", "SQL", "Pandas", "NumPy", "Statistics", "Data Visualization", "scikit-learn"],
+    "learning_path": [
+      "1. Probability, statistics, and hypothesis testing.",
+      "2. Advanced SQL querying (window functions, CTEs, aggregation).",
+      "3. Exploratory Data Analysis (EDA) and storytelling with Seaborn/Plotly.",
+      "4. Predictive modeling: Regression, classification, time-series forecasting.",
+      "5. Business metrics and A/B testing methodology."
+    ],
+    "beginner_projects": [
+      "Customer churn prediction notebook with comprehensive feature engineering.",
+      "Interactive sales analytics dashboard built in Streamlit.",
+      "A/B test analysis report with p-value calculations and power analysis."
+    ],
+    "key_interview_topics": ["P-values and hypothesis testing", "Feature scaling and imputation", "Confusion matrix metrics (Precision, Recall, ROC-AUC)", "SQL window functions"]
+  },
+  {
+    "role": "DevOps & Cloud Engineer",
+    "overview": "Automates software delivery pipelines, manages cloud infrastructure, and ensures system reliability.",
+    "core_skills": ["Linux", "Bash", "Docker", "Kubernetes", "AWS / GCP", "Terraform", "CI/CD (GitHub Actions)", "Prometheus"],
+    "learning_path": [
+      "1. Linux administration, networking fundamentals (DNS, TCP/IP, SSH).",
+      "2. Containerization: Docker multi-stage builds, container networking.",
+      "3. CI/CD automation: Automated testing, linting, and continuous delivery.",
+      "4. Infrastructure as Code (Terraform) on public cloud (AWS/GCP).",
+      "5. Container orchestration (Kubernetes) and observability (Prometheus/Grafana)."
+    ],
+    "beginner_projects": [
+      "Automated CI/CD pipeline building, testing, and pushing container images to registry.",
+      "Terraform configuration provisioning a VPC, subnets, and EC2/S3 resources.",
+      "Monitoring stack scraping metrics from a web service."
+    ],
+    "key_interview_topics": ["Docker layer caching", "Kubernetes Pod lifecycle and Deployments", "Zero-downtime deployment strategies (Blue/Green, Rolling)", "Infrastructure as code state management"]
+  }
+]

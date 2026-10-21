@@ -2,6 +2,7 @@ __pycache__/
 *.pkl
 *.pyc
 *.pyo
+backups/
 data/resume_matcher.db
 /models/
 !backend/app/models/
@@ -29,3 +30,11 @@ uploads/
 
 # Large resume dataset
 data/Resume/Resume.csv
+
+# Usage tracker state & runtime logs
+data/jsearch_usage.json
+data/*.bak
+data/*.db
+*.log
+.pytest_cache/
+scratch/

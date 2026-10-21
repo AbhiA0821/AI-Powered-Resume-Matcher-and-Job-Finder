@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icons %}
+
+{% block title %}Job Discovery — Resume Matcher & Job Finder{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4">
+    <!-- Header Section -->
+    <div class="pb-3 border-bottom border-secondary border-opacity-25">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3">
+            <div>
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <span class="ha-brand-mark">RESUME MATCHER</span>
+                    <span class="text-muted fs-8 font-mono text-uppercase tracking-wider">& JOB FINDER</span>
+                </div>
+                <h1 class="h3 fw-bold text-white mb-1">Discover Opportunities</h1>
+                <p class="text-secondary fs-8 mb-0">
+                    Technology listings evaluated and ranked against your profile.
+                </p>
+            </div>
+            {% if target_role %}
+            <div>
+                <span class="badge badge-accent px-3 py-2 fs-8 font-mono">Target Role: {{ target_role }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Search & Filter Form -->
+    <div class="ha-card p-4">
+        <form method="GET" action="{{ url_for('jobs') }}" class="row g-3 align-items-end">
+            <div class="col-12 col-md-5">
+                <label for="search-input" class="form-label fs-8 text-secondary">Search by Title or Keyword</label>
+                <input type="text" id="search-input" name="search" value="{{ search_query or '' }}" class="form-control" placeholder="Python, Full Stack, Machine Learning">
+            </div>
+            <div class="col-12 col-md-4">
+                <label for="role-select" class="form-label fs-8 text-secondary">Filter by Role</label>
+                <input type="text" id="role-select" name="role" value="{{ role_filter or '' }}" class="form-control" placeholder="Software Engineer, AI Engineer">
+            </div>
+            <div class="col-12 col-md-3 d-flex gap-2">
+                <button type="submit" class="btn btn-ha-primary flex-grow-1">Filter Jobs</button>
+                {% if search_query or role_filter %}
+                <a href="{{ url_for('jobs') }}" class="btn btn-ha-secondary">Clear</a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- Job Recommendations List -->
+    {% if recommendations %}
+    <div class="d-flex flex-column gap-3">
+        {% for job in recommendations %}
+        <div class="ha-job-card">
+            <div>
+                <div class="ha-job-card-header mb-2">
+                    <div>
+                        <h2 class="ha-job-card-title mb-1">
+                            <a href="{{ url_for('job_detail_page', job_id=job.job_id or job.id) }}" class="text-white text-decoration-none">
+                                {{ job.job_title }}
+                            </a>
+                        </h2>
+                        <div class="ha-job-card-meta">
+                            <span class="d-inline-flex align-items-center gap-1">
+                                {{ icons.icon("building", size=13) }}
+                                <span class="text-white">{{ job.company }}</span>
+                            </span>
+                            <span class="d-inline-flex align-items-center gap-1">
+                                {{ icons.icon("map-pin", size=13) }}
+                                <span>{{ job.location or 'India' }}</span>
+                            </span>
+                            {% if job.employment_type %}
+                            <span class="badge badge-neutral fs-8">{{ job.employment_type }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Match Score -->
+                    <span class="ha-score-pill {% if job.match_percentage >= 80 %}ha-score-high{% elif job.match_percentage >= 65 %}ha-score-med{% else %}ha-score-low{% endif %} flex-shrink-0">
+                        {{ job.match_percentage }}% MATCH
+                    </span>
+                </div>
+
+                <!-- Skills Comparison -->
+                <div class="ha-job-card-skills mt-3">
+                    {% if job.matched_skills %}
+                    <div class="mb-1">
+                        <span class="text-muted fs-8 d-inline-block me-1">Matched Skills:</span>
+                        <span class="text-secondary fs-8 font-mono">
+                            {{ job.matched_skills[:4]|join(' · ') }}
+                        </span>
+                    </div>
+                    {% endif %}
+                    {% if job.missing_skills %}
+                    <div>
+                        <span class="text-muted fs-8 d-inline-block me-1">Recommended:</span>
+                        <span class="text-secondary fs-8 font-mono">
+                            {{ job.missing_skills[:3]|join(' · ') }}
+                        </span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="d-flex align-items-center justify-content-between pt-3 border-top border-secondary border-opacity-25 mt-3">
+                <a href="{{ url_for('job_detail_page', job_id=job.job_id or job.id) }}" class="btn btn-sm btn-ha-secondary">
+                    View Details
+                </a>
+                {% if job.is_available and job.application_url and job.application_url.startswith(('http://', 'https://')) and job.application_url != "Application link unavailable" %}
+                <a href="{{ job.application_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ha-primary d-inline-flex align-items-center gap-1">
+                    <span>Apply Now →</span>
+                </a>
+                {% else %}
+                <div class="d-inline-flex align-items-center gap-2">
+                    <span class="badge badge-surface text-secondary fs-8">Posting unavailable</span>
+                    <a href="{{ url_for('jobs', search=job.job_title or job.title) }}" class="btn btn-sm btn-ha-secondary d-inline-flex align-items-center gap-1">
+                        <span>Find Similar Jobs</span>
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="ha-empty-state py-5">
+        <div class="ha-empty-state-icon" aria-hidden="true">{{ icons.icon("briefcase", size=36) }}</div>
+        <h2 class="ha-empty-state-title">No Matching Opportunities Found</h2>
+        <p class="ha-empty-state-desc mb-3">
+            Try adjusting your search keywords, or run matching from the Resume Matcher page.
+        </p>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-ha-primary">Go to Resume Matcher</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

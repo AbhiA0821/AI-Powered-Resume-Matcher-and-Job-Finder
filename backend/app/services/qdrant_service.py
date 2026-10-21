@@ -9,6 +9,7 @@ from app.core.config import settings
 RESUMES_COLLECTION = "hireagent_resumes"
 JOBS_COLLECTION = "hireagent_jobs"
 EMBEDDING_DIM = 384
+VECTOR_DIMENSION = 384
 
 _qdrant_client_instance: Optional[QdrantClient] = None
 
@@ -25,10 +26,17 @@ def get_qdrant_client() -> QdrantClient:
         _qdrant_client_instance = QdrantClient(url=url, api_key=api_key, timeout=30.0)
     return _qdrant_client_instance
 
+_ENSURED_COLLECTIONS = set()
+
 def ensure_collection(collection_name: str) -> bool:
     """Ensures a HireAgent Qdrant collection exists with 384D Cosine distance configuration.
     If the collection exists, it is reused safely without deleting or altering existing data.
+    Caches verified collections in memory to eliminate redundant remote API round-trips.
     """
+    global _ENSURED_COLLECTIONS
+    if collection_name in _ENSURED_COLLECTIONS:
+        return True
+
     client = get_qdrant_client()
     collections_response = client.get_collections()
     existing_names = [c.name for c in collections_response.collections]
@@ -55,6 +63,23 @@ def ensure_collection(collection_name: str) -> bool:
         except Exception:
             pass
 
+    # Ensure payload indexes for JOBS_COLLECTION
+    if collection_name == JOBS_COLLECTION:
+        try:
+            client.create_payload_index(
+                collection_name=collection_name,
+                field_name="source_type",
+                field_schema=models.PayloadSchemaType.KEYWORD
+            )
+            client.create_payload_index(
+                collection_name=collection_name,
+                field_name="source",
+                field_schema=models.PayloadSchemaType.KEYWORD
+            )
+        except Exception:
+            pass
+
+
     # Verify existing collection vector size
     collection_info = client.get_collection(collection_name)
     vec_config = collection_info.config.params.vectors
@@ -71,7 +96,14 @@ def ensure_collection(collection_name: str) -> bool:
             f"Collection '{collection_name}' exists but has vector size {actual_size}, "
             f"expected {EMBEDDING_DIM} for BAAI/bge-small-en-v1.5."
         )
+    _ENSURED_COLLECTIONS.add(collection_name)
     return True
+
+def ensure_collections_exist() -> bool:
+    """Ensures both hireagent_jobs and hireagent_resumes collections exist."""
+    res1 = ensure_collection(JOBS_COLLECTION)
+    res2 = ensure_collection(RESUMES_COLLECTION)
+    return bool(res1 and res2)
 
 def delete_resume_vectors(user_id: int, resume_id: int) -> bool:
     """Idempotently deletes previous points belonging strictly to user_id and resume_id in hireagent_resumes collection."""
@@ -145,14 +177,32 @@ def upsert_job_vectors(points: List[PointStruct]) -> bool:
     client.upsert(collection_name=JOBS_COLLECTION, points=points)
     return True
 
-def search_jobs_semantic(query_vector: List[float], limit: int = 5) -> List[Dict[str, Any]]:
-    """Performs semantic similarity search across hireagent_jobs collection."""
+def search_jobs_semantic(
+    query_vector: Optional[List[float]] = None,
+    limit: int = 5,
+    source_type: Optional[str] = None,
+    query_text: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """Performs semantic similarity search across hireagent_jobs collection with optional filtering."""
+    if query_vector is None and query_text is not None:
+        from app.services.embeddings import embed_text
+        query_vector = embed_text(query_text)
+    elif isinstance(query_vector, str):
+        from app.services.embeddings import embed_text
+        query_vector = embed_text(query_vector)
     ensure_collection(JOBS_COLLECTION)
     client = get_qdrant_client()
+
+    query_filter = None
+    if source_type:
+        query_filter = Filter(
+            must=[FieldCondition(key="source_type", match=MatchValue(value=source_type))]
+        )
     
     res = client.query_points(
         collection_name=JOBS_COLLECTION,
         query=query_vector,
+        query_filter=query_filter,
         limit=limit
     )
     
@@ -165,6 +215,13 @@ def search_jobs_semantic(query_vector: List[float], limit: int = 5) -> List[Dict
             "job_title": payload.get("job_title", ""),
             "company": payload.get("company", ""),
             "job_role": payload.get("job_role", ""),
+            "required_skills": payload.get("required_skills", ""),
+            "application_url": payload.get("application_url", "Application link unavailable"),
+            "source": payload.get("source", "HireAgent Test Catalog"),
+            "source_type": payload.get("source_type", "static_catalog"),
+            "location": payload.get("location", "India"),
+            "posted_at": payload.get("posted_at", ""),
             "text": payload.get("text", "")
         })
     return results
+

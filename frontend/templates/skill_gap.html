@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icons %}
+
+{% block title %}Skill Gap Analysis — Resume Matcher & Job Finder{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4">
+    <div class="ha-section-header">
+        <h1 class="h3 fw-bold text-white mb-1">Skill Gap Analysis & Learning Priorities</h1>
+        <p class="ha-section-subtitle">Actionable analysis comparing your verified skills against active market job postings.</p>
+    </div>
+
+    {% if not recommendations %}
+    <div class="ha-empty-state">
+        <div class="ha-empty-state-icon" aria-hidden="true">{{ icons.icon("zap", size=32) }}</div>
+        <h2 class="ha-empty-state-title">No Skill Gap Data Available</h2>
+        <p class="ha-empty-state-desc">Upload your resume to calculate skill gaps across matching technology job openings in India.</p>
+        <a href="{{ url_for('resume_page') }}" class="btn btn-ha-primary px-4 py-2">Upload Resume</a>
+    </div>
+    {% else %}
+
+    <!-- Top Summary: Verified Skills & Aggregate Gaps -->
+    <div class="row g-4">
+        <!-- Verified Skills -->
+        <div class="col-lg-6">
+            <div class="ha-card h-100">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2 class="h5 fw-bold text-white mb-0">Your Verified Skills</h2>
+                    <span class="badge badge-success">{{ verified_skills|length }} Present</span>
+                </div>
+                <p class="text-secondary fs-8 mb-3">Skills successfully extracted and verified from your active resume.</p>
+                <div class="d-flex flex-wrap gap-1">
+                    {% for s in verified_skills %}
+                    <span class="badge badge-success fs-8">{{ icons.icon("check", size=10) }} {{ s }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Aggregate Missing Skills & Learning Priorities -->
+        <div class="col-lg-6">
+            <div class="ha-card h-100">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h2 class="h5 fw-bold text-white mb-0">Market Demand Gaps</h2>
+                    <span class="badge badge-warning">{{ aggregate_missing|length }} High-Priority</span>
+                </div>
+                <p class="text-secondary fs-8 mb-3">Skills frequently requested across your top matched positions that are missing from your resume.</p>
+                <div class="d-flex flex-wrap gap-1">
+                    {% for s in aggregate_missing %}
+                    <span class="badge badge-warning fs-8">{{ icons.icon("alert", size=10) }} {{ s }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Per-Job Breakdown -->
+    <div class="ha-card">
+        <h2 class="h5 fw-bold text-white mb-3">Per-Job Competency Breakdown</h2>
+        <div class="d-flex flex-column gap-3">
+            {% for job in recommendations %}
+            <div class="p-3 rounded bg-surface-2 border border-secondary border-opacity-25">
+                <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-2">
+                    <div>
+                        <h3 class="h6 fw-bold text-white mb-0">{{ job.job_title }}</h3>
+                        <small class="text-secondary d-flex align-items-center gap-2 mt-1">
+                            <span>{{ icons.icon("building", size=12) }} {{ job.company }}</span>
+                            <span>•</span>
+                            <span>Match Score: <strong class="text-info font-mono">{{ job.match_percentage }}%</strong></span>
+                        </small>
+                    </div>
+                    <div>
+                        <a href="{{ url_for('job_detail_page', job_id=job.job_id or job.id) }}" class="btn btn-sm btn-ha-secondary">View Role Details</a>
+                    </div>
+                </div>
+
+                <div class="row g-2 mt-2">
+                    <div class="col-md-6">
+                        <small class="text-success d-block fs-8 fw-semibold mb-1">Matched Skills ({{ job.matched_skills|length if job.matched_skills else 0 }})</small>
+                        <div class="d-flex flex-wrap gap-1">
+                            {% if job.matched_skills %}
+                            {% for s in job.matched_skills %}
+                            <span class="badge badge-neutral fs-8">{{ s }}</span>
+                            {% endfor %}
+                            {% else %}
+                            <span class="text-muted fs-8">None explicitly matched</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <small class="text-warning d-block fs-8 fw-semibold mb-1">Missing Skills ({{ job.missing_skills|length if job.missing_skills else 0 }})</small>
+                        <div class="d-flex flex-wrap gap-1">
+                            {% if job.missing_skills %}
+                            {% for s in job.missing_skills %}
+                            <span class="badge badge-warning fs-8">{{ s }}</span>
+                            {% endfor %}
+                            {% else %}
+                            <span class="text-success fs-8">All required skills present!</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

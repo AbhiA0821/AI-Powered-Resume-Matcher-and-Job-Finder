@@ -1,0 +1,98 @@
+[
+  {
+    "id": "MATCH-001",
+    "resume_text": "Alice Smith - AI Engineer with 2 years of experience. Proficient in Python, PyTorch, Transformers, Large Language Models, FastAPI, and Docker. Built and evaluated RAG pipelines using Qdrant vector database.",
+    "candidate_role": "AI Engineer",
+    "jobs": [
+      {
+        "id": 101,
+        "job_title": "AI Engineer",
+        "company": "DeepAI Tech",
+        "job_role": "AI Engineer",
+        "required_skills": "Python, PyTorch, Transformers, Large Language Models, FastAPI",
+        "expected_rank": 1,
+        "description": "Develop and optimize production LLM pipelines."
+      },
+      {
+        "id": 102,
+        "job_title": "Data Scientist",
+        "company": "Data Insights Ltd",
+        "job_role": "Data Scientist",
+        "required_skills": "Python, SQL, Pandas, Scikit-Learn, Statistics, Tableau",
+        "expected_rank": 2,
+        "description": "Analyze customer behavior and build predictive models."
+      },
+      {
+        "id": 103,
+        "job_title": "Senior iOS Engineer",
+        "company": "MobileWorks",
+        "job_role": "Mobile Developer",
+        "required_skills": "Swift, iOS, UIKit, SwiftUI, CoreData, Xcode",
+        "expected_rank": 3,
+        "description": "Build modern native iOS applications."
+      }
+    ],
+    "description": "Strong AI Engineer resume matching AI role #1, moderate Data Science role #2, completely irrelevant iOS role #3."
+  },
+  {
+    "id": "MATCH-002",
+    "resume_text": "Bob Kumar - Backend Developer. Skilled in Python, FastAPI, Django, PostgreSQL, MySQL, Redis, REST API, Microservices, Git. Experience in building scalable APIs.",
+    "candidate_role": "Backend Developer",
+    "jobs": [
+      {
+        "id": 201,
+        "job_title": "Senior Python Backend Developer",
+        "company": "CloudForge",
+        "job_role": "Backend Developer",
+        "required_skills": "Python, FastAPI, PostgreSQL, Redis, Microservices",
+        "expected_rank": 1,
+        "description": "Architect and maintain high-throughput backend services."
+      },
+      {
+        "id": 202,
+        "job_title": "Full Stack Developer",
+        "company": "WebFlow Corp",
+        "job_role": "Full Stack Developer",
+        "required_skills": "Python, Django, JavaScript, React, HTML, CSS",
+        "expected_rank": 2,
+        "description": "Full stack web development across Python and React."
+      },
+      {
+        "id": 203,
+        "job_title": "Graphic Designer",
+        "company": "Creative Studio",
+        "job_role": "Designer",
+        "required_skills": "Photoshop, Illustrator, Figma, Typography, Branding",
+        "expected_rank": 3,
+        "description": "Design print and digital brand collateral."
+      }
+    ],
+    "description": "Backend Developer ranking Backend #1, Full Stack #2, Graphic Design #3."
+  },
+  {
+    "id": "MATCH-003",
+    "resume_text": "Charlie Patel - Fresher Computer Science Graduate 2026. Academic knowledge of Python, SQL, HTML, CSS, Git. Completed capstone project in Python web development.",
+    "candidate_role": "Python Developer",
+    "jobs": [
+      {
+        "id": 301,
+        "job_title": "Junior Python Developer",
+        "company": "NexGen Apps",
+        "job_role": "Python Developer",
+        "required_skills": "Python, SQL, Git, HTML, CSS",
+        "expected_rank": 1,
+        "description": "Entry level Python development role for recent graduates."
+      },
+      {
+        "id": 302,
+        "job_title": "Principal Distributed Systems Architect",
+        "company": "Global Enterprise",
+        "job_role": "Architect",
+        "required_skills": "Distributed Systems, C++, Go, Kafka, Paxos, Raft, 10+ years experience",
+        "expected_rank": 2,
+        "description": "Principal systems architect for mission-critical core engines."
+      }
+    ],
+    "description": "Fresher candidate ranking Junior role significantly above 10+ year Principal Architect role."
+  }
+]

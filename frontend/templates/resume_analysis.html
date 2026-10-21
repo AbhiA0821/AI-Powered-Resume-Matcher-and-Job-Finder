@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icons %}
+
+{% block title %}Resume Analysis — Resume Matcher & Job Finder{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4">
+    <div class="ha-section-header">
+        <h1 class="h3 fw-bold text-white mb-1">Resume Intelligence & Parsing</h1>
+        <p class="ha-section-subtitle">Inspect extracted skills, target role categorization, and vector embeddings.</p>
+    </div>
+
+    <div class="row g-4">
+        <!-- Upload Form -->
+        <div class="col-lg-5">
+            <div class="ha-card h-100">
+                <h2 class="h5 fw-bold text-white mb-2">Upload Resume Document</h2>
+                <p class="text-muted fs-8 mb-4">Upload your latest PDF or Word (DOCX) resume. Text extraction and skill tagging execute securely on the server.</p>
+
+                <form action="{{ url_for('resume_page') }}" method="POST" enctype="multipart/form-data">
+                    <div class="mb-4">
+                        <label for="resume-file" class="form-label">Resume Document (.pdf, .docx)</label>
+                        <input type="file" id="resume-file" name="resume_file" accept=".pdf,.docx" class="form-control" required>
+                    </div>
+                    <button type="submit" class="btn btn-ha-primary w-100 py-2">
+                        Upload & Extract Resume
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Extraction Results -->
+        <div class="col-lg-7">
+            <div class="ha-card h-100">
+                <h2 class="h5 fw-bold text-white mb-3">Extracted Profile Intelligence</h2>
+
+                {% if latest_resume %}
+                <div class="d-flex flex-column gap-3">
+                    <div class="row g-3">
+                        <div class="col-sm-6">
+                            <div class="p-3 bg-surface-2 rounded border border-secondary border-opacity-25">
+                                <span class="text-subtle fs-8 d-block text-uppercase fw-semibold">Target Job Role</span>
+                                <span class="fs-6 fw-bold text-white">{{ profile.target_role or 'Software Engineer' }}</span>
+                            </div>
+                        </div>
+                        <div class="col-sm-6">
+                            <div class="p-3 bg-surface-2 rounded border border-secondary border-opacity-25">
+                                <span class="text-subtle fs-8 d-block text-uppercase fw-semibold">Experience Tier</span>
+                                <span class="fs-6 fw-bold text-white">{{ profile.experience_level or 'Fresher / Entry' }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="p-3 bg-surface-2 rounded border border-secondary border-opacity-25">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="text-subtle fs-8 text-uppercase fw-semibold">Extracted Technical Skills</span>
+                            <span class="badge badge-accent">{{ skills|length }} Identified</span>
+                        </div>
+                        {% if skills %}
+                        <div class="d-flex flex-wrap gap-1">
+                            {% for skill in skills %}
+                            <span class="badge badge-neutral fs-8">{{ skill }}</span>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <p class="text-muted fs-8 mb-0">No technical skills detected in the document text.</p>
+                        {% endif %}
+                    </div>
+
+                    <div class="p-3 bg-surface-2 rounded border border-secondary border-opacity-25">
+                        <span class="text-subtle fs-8 d-block text-uppercase fw-semibold mb-1">Vector Indexing Status</span>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge badge-success">Dense Vector Embedded</span>
+                            <span class="text-muted fs-8">Qdrant Cloud (384-dimensional BGE model)</span>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="ha-empty-state py-5">
+                    <div class="ha-empty-state-icon" aria-hidden="true">{{ icons.icon("document", size=32) }}</div>
+                    <h3 class="ha-empty-state-title">No Resume Parsed</h3>
+                    <p class="ha-empty-state-desc">Upload a PDF or Word resume using the form to view extracted skills, experience evaluation, and role classification.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

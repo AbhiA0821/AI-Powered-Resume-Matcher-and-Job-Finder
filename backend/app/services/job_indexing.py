@@ -42,6 +42,33 @@ def construct_job_text_representation(job: Dict[str, Any]) -> str:
         
     return " | ".join(parts)
 
+def build_job_embedding_text(
+    title: str = "",
+    company: str = "",
+    location: str = "",
+    description: str = "",
+    skills: Optional[List[str]] = None,
+    experience: str = "",
+    employment_type: str = ""
+) -> str:
+    """Builds textual representation for job embedding from verified fields."""
+    parts = []
+    if title:
+        parts.append(title)
+    if company:
+        parts.append(f"Company: {company}")
+    if location:
+        parts.append(f"Location: {location}")
+    if skills:
+        parts.append(f"Skills: {', '.join(skills)}")
+    if experience:
+        parts.append(f"Experience: {experience}")
+    if employment_type:
+        parts.append(f"Type: {employment_type}")
+    if description:
+        parts.append(f"Description: {description}")
+    return ". ".join(parts)
+
 def index_all_jobs(jobs: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Indexes a list of job records into the hireagent_jobs Qdrant collection idempotently."""
     if not jobs:
@@ -56,11 +83,17 @@ def index_all_jobs(jobs: List[Dict[str, Any]]) -> Dict[str, Any]:
         point_id = generate_deterministic_job_point_id(job_id)
         payload = {
             "job_id": job_id,
+            "external_job_id": str(job.get("external_job_id") or job_id),
             "job_title": job.get("job_title", ""),
             "company": job.get("company", ""),
             "job_role": job.get("job_role", ""),
             "required_skills": job.get("required_skills", ""),
             "experience_level": job.get("experience_level", ""),
+            "application_url": job.get("application_url", "Application link unavailable"),
+            "source": job.get("source", "HireAgent Test Catalog"),
+            "source_type": job.get("source_type", "static_catalog"),
+            "location": job.get("location", "India"),
+            "posted_at": job.get("posted_at", ""),
             "text": text_representations[idx]
         }
         points.append(PointStruct(
@@ -71,6 +104,22 @@ def index_all_jobs(jobs: List[Dict[str, Any]]) -> Dict[str, Any]:
         
     upsert_job_vectors(points)
     return {"indexed_count": len(points), "status": "success"}
+
+def index_live_jobs_in_qdrant(jobs: List[Any]) -> Dict[str, Any]:
+    """Indexes live fresh jobs from RapidAPI into Qdrant Cloud under hireagent_jobs with source_type='live_api'."""
+    normalized_dicts = []
+    for idx, j in enumerate(jobs):
+        if hasattr(j, "model_dump"):
+            from app.services.job_sources import to_hireagent_job_dict
+            job_dict = to_hireagent_job_dict(j, auto_id=idx + 100000)
+        elif isinstance(j, dict):
+            job_dict = dict(j)
+        else:
+            continue
+        job_dict["source_type"] = "live_api"
+        normalized_dicts.append(job_dict)
+    return index_all_jobs(normalized_dicts)
+
 
 def search_jobs_by_query_semantic(query_text: str, limit: int = 5) -> List[Dict[str, Any]]:
     """Performs semantic similarity search against indexed jobs using a text query."""

@@ -1,0 +1,57 @@
+{
+  "evaluation_name": "HireAgent Agent Framework Evaluation",
+  "timestamp": "2026-10-19T05:20:43Z",
+  "overall_status": "WARN",
+  "elapsed_seconds": 180.15,
+  "langgraph_evaluation": {
+    "status": "WARN",
+    "total_nodes_tested": 6,
+    "node_evaluations": [
+      {
+        "node": "extract_skills_node",
+        "status": "FAIL",
+        "skills": [
+          "docker",
+          "fastapi",
+          "machine learning",
+          "postgresql",
+          "python"
+        ]
+      },
+      {
+        "node": "determine_role_node",
+        "status": "PASS",
+        "detected_role": "AI Engineer"
+      },
+      {
+        "node": "retrieve_jobs_node",
+        "status": "PASS",
+        "candidate_count": 42
+      },
+      {
+        "node": "hybrid_match_and_rank_node",
+        "status": "PASS",
+        "ranked_count": 5
+      },
+      {
+        "node": "rag_enrichment_node",
+        "status": "PASS",
+        "enriched_count": 5
+      },
+      {
+        "node": "empty_resume_edge_case",
+        "status": "PASS"
+      }
+    ]
+  },
+  "crewai_evaluation": {
+    "status": "PASS",
+    "duration_seconds": 57.06,
+    "schema_valid": true,
+    "profile_summary": "Candidate targeting Software Engineer with verified proficiency in core software fundamentals....",
+    "target_role": "Software Engineer",
+    "top_skills": [],
+    "learning_priorities_count": 5,
+    "is_degraded": true
+  }
+}

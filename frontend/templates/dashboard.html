@@ -1,0 +1,345 @@
+{% extends "base.html" %}
+{% import "_icons.html" as icons %}
+
+{% block title %}Resume Matcher & Job Finder{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column gap-4">
+    <!-- Top Header Bar -->
+    <div class="pb-3 border-bottom border-secondary border-opacity-25">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3">
+            <div>
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <span class="ha-brand-mark">RESUME MATCHER</span>
+                    <span class="text-muted fs-8 font-mono text-uppercase tracking-wider">& JOB FINDER</span>
+                </div>
+                <h1 class="h3 fw-bold text-white mb-1">Find the jobs that actually match your skills.</h1>
+                <p class="text-secondary fs-8 mb-0" style="max-width: 680px;">
+                    Upload your resume and let our AI matching engine discover relevant opportunities.
+                </p>
+            </div>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                {% if quota and quota.monthly_limit %}
+                <span class="badge badge-surface font-mono fs-8" title="Monthly search quota">
+                    {{ quota.requests_used }}/{{ quota.monthly_limit }} Quota
+                </span>
+                {% endif %}
+                {% if overview.resume and overview.resume.exists %}
+                <span class="badge badge-surface font-mono fs-8 d-inline-flex align-items-center gap-1" title="Active Resume">
+                    {{ icons.icon("document", size=12) }}
+                    <span>{{ overview.resume.filename }}</span>
+                </span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert error for upload / actions -->
+    <div id="dashboardUploadError" class="alert alert-danger d-none" role="alert"></div>
+
+    <!-- MAIN RESUME MATCHER INPUT PANEL -->
+    <div class="ha-card p-4">
+        <form id="resumeMatcherForm" action="{{ url_for('dashboard') }}" method="POST" enctype="multipart/form-data">
+            <input type="hidden" name="action" value="find_matches">
+            {% if overview.resume and overview.resume.exists and resumes %}
+            <input type="hidden" id="currentResumeId" name="resume_id" value="{{ resumes[0].id }}">
+            {% endif %}
+
+            <!-- SECTION 1: RESUME UPLOAD ZONE -->
+            <div class="mb-4">
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <label class="form-label text-white fw-semibold mb-0 d-flex align-items-center gap-2">
+                        {{ icons.icon("document", size=16, class="text-accent") }}
+                        <span>RESUME UPLOAD</span>
+                    </label>
+                    <span class="text-muted fs-8 font-mono">PDF / DOCX · Maximum 10 MB</span>
+                </div>
+
+                <!-- Drag & Drop / File Input Box -->
+                <div id="resumeDropZone" class="ha-dropzone p-4 text-center border rounded-3 position-relative">
+                    <input type="file" id="dashboardResumeFile" name="resume_file" accept=".pdf,.docx" class="position-absolute top-0 start-0 w-100 h-100 opacity-0 cursor-pointer" style="cursor: pointer;" aria-label="Upload resume file">
+                    
+                    <div id="dropZonePrompt" class="d-flex flex-column align-items-center py-2">
+                        <div class="ha-brand-mark p-2 mb-2 rounded-circle" aria-hidden="true" style="width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center;">
+                            {{ icons.icon("upload", size=18) }}
+                        </div>
+                        <div class="fw-semibold text-white fs-7 mb-1" id="fileSelectedName">
+                            {% if overview.resume and overview.resume.exists %}
+                                <span class="text-accent me-1">{{ icons.icon("check", size=14) }}</span> {{ overview.resume.filename }}
+                            {% else %}
+                                Drag & drop your resume here, or <span class="text-accent text-decoration-underline">browse file</span>
+                            {% endif %}
+                        </div>
+                        <div class="d-flex align-items-center gap-2 mt-2" id="fileActionLabel">
+                            {% if overview.resume and overview.resume.exists %}
+                            <span class="btn btn-sm btn-ha-secondary pointer-events-none" style="pointer-events: none;">Replace Resume</span>
+                            {% else %}
+                            <span class="btn btn-sm btn-ha-secondary pointer-events-none" style="pointer-events: none;">Upload Resume</span>
+                            {% endif %}
+                        </div>
+                        <span class="text-muted fs-8 font-mono mt-2">Support: PDF / DOCX · Maximum 10 MB</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 2: JOB PREFERENCES -->
+            <div class="mb-4 pt-3 border-top border-secondary border-opacity-25">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <label class="form-label text-white fw-semibold mb-0 d-flex align-items-center gap-2">
+                        {{ icons.icon("target", size=16, class="text-accent") }}
+                        <span>JOB PREFERENCES</span>
+                    </label>
+                    <span class="text-muted fs-8">Optional filters to guide discovery</span>
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-12 col-md-4">
+                        <label for="prefTargetRole" class="form-label fs-8 text-secondary">Target Role</label>
+                        <input type="text" id="prefTargetRole" name="target_role" class="form-control" placeholder="AI Engineer / Software Engineer" value="{{ profile.target_role or overview.profile.primary_role or '' }}">
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label for="prefLocation" class="form-label fs-8 text-secondary">Preferred Location</label>
+                        <input type="text" id="prefLocation" name="preferred_location" class="form-control" placeholder="Pune / Bangalore / Remote">
+                    </div>
+                    <div class="col-12 col-md-4">
+                        <label for="prefCompany" class="form-label fs-8 text-secondary">Preferred Company</label>
+                        <input type="text" id="prefCompany" name="preferred_company" class="form-control" placeholder="Optional">
+                    </div>
+                </div>
+            </div>
+
+            <!-- SECTION 3: CTA SUBMIT BUTTON -->
+            <div class="d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-3 pt-2">
+                <div class="text-muted fs-8">
+                    {% if overview.resume and overview.resume.exists %}
+                    <span>Resume ready. Click below to find matching opportunities.</span>
+                    {% else %}
+                    <span>Upload your resume to begin finding matches.</span>
+                    {% endif %}
+                </div>
+                <button id="btnFindMatchingJobs" type="submit" class="btn btn-ha-primary px-4 py-2 d-inline-flex align-items-center gap-2">
+                    <span class="fw-semibold">Find Matching Jobs →</span>
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- AI PROCESSING EXPERIENCE (Visible when processing) -->
+    <div id="dashboardProcessingSection" class="ha-ai-working-card {% if not overview.is_processing %}d-none{% endif %}">
+        <div class="ha-ai-orb-container">
+            <div class="ha-ai-orb"></div>
+            <div class="ha-ai-orb-ring"></div>
+        </div>
+        <h2 id="aiProcessingTitle" class="h4 fw-bold text-white mb-2">Analyzing your resume...</h2>
+        <p id="aiProcessingSubtitle" class="text-secondary fs-8 mb-4 mx-auto" style="max-width: 460px;">
+            Evaluating your skills, experience, and role alignment across available jobs...
+        </p>
+
+        <div class="ha-ai-step-list">
+            <div class="ha-ai-step-item">
+                <span class="ha-ai-step-icon text-accent">{{ icons.icon("check", size=14) }}</span>
+                <span>Analyzing your resume...</span>
+            </div>
+            <div class="ha-ai-step-item">
+                <span class="ha-ai-step-icon text-accent ha-spin">{{ icons.icon("spinner", size=14) }}</span>
+                <span>Finding relevant jobs...</span>
+            </div>
+            <div class="ha-ai-step-item">
+                <span class="ha-ai-step-icon text-muted">{{ icons.icon("circle", size=14) }}</span>
+                <span>Ranking your best matches...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- RESULTS SECTION -->
+    {% if overview.resume and overview.resume.exists and not overview.is_processing %}
+    <div id="dashboardResultsSection" class="d-flex flex-column gap-4">
+        <!-- Compact Resume Profile Summary -->
+        <div class="ha-card p-3 p-md-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                <div>
+                    <div class="d-flex align-items-center gap-2 mb-1">
+                        <span class="badge badge-accent fs-8">RESUME ANALYZED</span>
+                        <span class="text-white fw-bold fs-7">{{ overview.resume.filename }}</span>
+                    </div>
+                    {% if overview.profile and overview.profile.primary_role %}
+                    <div class="text-secondary fs-8 fw-semibold mb-2">
+                        {{ overview.profile.primary_role }}
+                    </div>
+                    {% endif %}
+                    {% if overview.profile and overview.profile.skills %}
+                    <div class="skills-summary-section">
+                        <!-- Compact View: First 10 Skills + Clickable Expand Button -->
+                        <div class="d-flex flex-wrap gap-1 align-items-center" id="skillsCompactView">
+                            {% for s in overview.profile.skills[:10] %}
+                            <span class="badge badge-surface font-mono fs-8 text-secondary">{{ s }}</span>
+                            {% endfor %}
+                            {% if overview.profile.skills|length > 10 %}
+                            <button type="button" id="toggleAllSkillsBtn" class="badge badge-accent border-0 fs-8 font-mono text-dark fw-semibold cursor-pointer" style="cursor: pointer;" data-count="{{ overview.profile.skills|length - 10 }}" aria-expanded="false" aria-controls="allSkillsContainer">
+                                +{{ overview.profile.skills|length - 10 }} more ↓
+                            </button>
+                            {% endif %}
+                        </div>
+
+                        {% if overview.profile.skills|length > 10 %}
+                        <!-- Expandable Container: Reveals ALL Extracted Skills -->
+                        <div id="allSkillsContainer" class="d-none mt-2 pt-2 border-top border-secondary border-opacity-25">
+                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                <span class="text-white fs-8 font-mono text-uppercase tracking-wider fw-semibold">
+                                    All Extracted Skills ({{ overview.profile.skills|length }})
+                                </span>
+                                <button type="button" id="collapseSkillsBtn" class="btn btn-link btn-sm text-accent text-decoration-none p-0 fs-8 font-mono">
+                                    Collapse ↑
+                                </button>
+                            </div>
+                            <div class="d-flex flex-wrap gap-1 align-items-center">
+                                {% for s in overview.profile.skills %}
+                                <span class="badge badge-surface font-mono fs-8 text-secondary">{{ s }}</span>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+
+                <div class="text-md-end flex-shrink-0">
+                    <span class="ha-score-pill">
+                        {{ overview.matches|length }} Matches Found
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- TOP MATCHING JOBS HEADER -->
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+            <div>
+                <h2 class="h4 fw-bold text-white mb-1 d-flex align-items-center gap-2">
+                    {{ icons.icon("target", size=20, class="text-accent") }}
+                    <span>TOP MATCHING JOBS</span>
+                </h2>
+                <p class="text-secondary fs-8 mb-0">
+                    Relevant opportunities ranked by your skill alignment and role fit.
+                </p>
+            </div>
+            <span class="text-muted fs-8 font-mono">
+                Showing top {{ overview.matches[:10]|length }} opportunities
+            </span>
+        </div>
+
+        {% if overview.matches %}
+        <!-- Top Matching Job Cards Grid -->
+        <div class="row g-3">
+            {% for job in overview.matches[:10] %}
+            <div class="col-12 col-lg-6">
+                <div class="ha-job-card h-100 d-flex flex-column justify-content-between">
+                    <div>
+                        <!-- Job Card Header -->
+                        <div class="ha-job-card-header mb-2">
+                            <div>
+                                <h3 class="ha-job-card-title mb-1">{{ job.title }}</h3>
+                                <div class="ha-job-card-meta">
+                                    <span class="d-inline-flex align-items-center gap-1">
+                                        {{ icons.icon("building", size=13) }}
+                                        <span class="text-white">{{ job.company }}</span>
+                                    </span>
+                                    <span class="d-inline-flex align-items-center gap-1">
+                                        {{ icons.icon("map-pin", size=13) }}
+                                        <span>{{ job.location or 'India' }}</span>
+                                    </span>
+                                    {% if job.job_role %}
+                                    <span class="badge badge-neutral fs-8">{{ job.job_role }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <!-- Match Score Pill -->
+                            <span class="ha-score-pill {% if job.score >= 80 %}ha-score-high{% elif job.score >= 65 %}ha-score-med{% else %}ha-score-low{% endif %} flex-shrink-0">
+                                {{ job.score }}% MATCH
+                            </span>
+                        </div>
+
+                        <!-- Why this matches -->
+                        {% if job.recommendation %}
+                        <div class="p-2 rounded bg-surface-2 border border-secondary border-opacity-25 mt-2 mb-2">
+                            <span class="text-muted fs-8 d-block fw-semibold mb-1">Why this matches</span>
+                            <p class="text-secondary fs-8 mb-0">
+                                {{ job.recommendation }}
+                            </p>
+                        </div>
+                        {% endif %}
+
+                        <!-- Matched Skills & Recommended Skills -->
+                        <div class="ha-job-card-skills mt-2">
+                            {% if job.matched_skills %}
+                            <div class="mb-1">
+                                <span class="text-muted fs-8 d-inline-block me-1">Matched Skills:</span>
+                                <span class="text-secondary fs-8 font-mono">
+                                    {{ job.matched_skills[:4]|join(' · ') }}
+                                </span>
+                            </div>
+                            {% endif %}
+                            {% if job.missing_skills %}
+                            <div>
+                                <span class="text-muted fs-8 d-inline-block me-1">Recommended:</span>
+                                <span class="text-secondary fs-8 font-mono">
+                                    {{ job.missing_skills[:3]|join(' · ') }}
+                                </span>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Job Card Actions -->
+                    <div class="d-flex align-items-center justify-content-between pt-3 border-top border-secondary border-opacity-25 mt-3">
+                        <a href="{{ url_for('job_detail_page', job_id=job.job_id) }}" class="btn btn-sm btn-ha-secondary">
+                            View Details
+                        </a>
+                        {% if job.is_available and job.apply_url and job.apply_url.startswith(('http://', 'https://')) and job.apply_url != 'Application link unavailable' %}
+                        <a href="{{ job.apply_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ha-primary d-inline-flex align-items-center gap-1">
+                            <span>Apply Now →</span>
+                        </a>
+                        {% else %}
+                        <div class="d-inline-flex align-items-center gap-2">
+                            <span class="badge badge-surface text-secondary fs-8">Posting unavailable</span>
+                            <a href="{{ url_for('jobs', search=job.title or job.job_title) }}" class="btn btn-sm btn-ha-secondary d-inline-flex align-items-center gap-1">
+                                <span>Find Similar Jobs</span>
+                            </a>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <!-- Honest Empty State for 0 Matches -->
+        <div class="ha-empty-state py-5">
+            <div class="ha-empty-state-icon" aria-hidden="true">{{ icons.icon("briefcase", size=36) }}</div>
+            <h3 class="ha-empty-state-title">We couldn't find enough matching jobs right now</h3>
+            <p class="ha-empty-state-desc mb-3">
+                No active listings currently exceed the matching threshold for your skills and criteria. You can adjust your target role or location preferences above and try again.
+            </p>
+            <div class="d-flex align-items-center justify-content-center gap-2">
+                <a href="{{ url_for('jobs') }}" class="btn btn-ha-secondary">
+                    Browse All Catalog Jobs
+                </a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% elif not overview.resume or not overview.resume.exists %}
+    <!-- EMPTY INITIAL STATE (BEFORE UPLOADING) -->
+    <div id="dashboardInitialSection" class="ha-empty-state py-5 {% if overview.is_processing %}d-none{% endif %}">
+        <div class="ha-empty-state-icon" aria-hidden="true">{{ icons.icon("document", size=36) }}</div>
+        <h2 class="ha-empty-state-title">No Resume Uploaded Yet</h2>
+        <p class="ha-empty-state-desc mb-3">
+            Supports PDF and DOCX (Max 10 MB). Upload your resume above to get intelligent match scores and find relevant job opportunities.
+        </p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}

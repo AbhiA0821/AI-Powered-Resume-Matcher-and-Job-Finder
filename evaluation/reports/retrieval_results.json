@@ -1,0 +1,266 @@
+{
+  "evaluation_name": "HireAgent Retrieval Evaluation",
+  "timestamp": "2026-10-19T05:01:42Z",
+  "qdrant_infrastructure": {
+    "connected": false,
+    "status": "BLOCKED_BY_INFRASTRUCTURE",
+    "error": "ConnectionReset / Cloud cluster unreachable: ResponseHandlingException ([WinError 10054] An existing connection was forcibly closed by the remote host)",
+    "url": "https://32613141-1eab-4163-93df-739f56a2605d.us-central1-0.gcp.cloud.qdrant.io"
+  },
+  "sample_count": 8,
+  "mean_metrics": {
+    "precision": {
+      "k_3": 0.9167,
+      "k_5": 0.725,
+      "k_10": 0.425
+    },
+    "recall": {
+      "k_3": 0.7937,
+      "k_5": 0.9021,
+      "k_10": 0.9021
+    },
+    "hit_rate": {
+      "k_3": 1.0,
+      "k_5": 1.0,
+      "k_10": 1.0
+    },
+    "ndcg": {
+      "k_3": 0.9679,
+      "k_5": 0.9548,
+      "k_10": 0.9448
+    },
+    "mrr": 1.0
+  },
+  "query_evaluations": [
+    {
+      "query_id": "Q-RET-001",
+      "status": "SUCCESS",
+      "retrieved_count": 5,
+      "relevant_count": 6,
+      "precision": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 0.5
+      },
+      "recall": {
+        "k_3": 0.5,
+        "k_5": 0.8333,
+        "k_10": 0.8333
+      },
+      "hit_rate": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "mrr": 1.0,
+      "ndcg": {
+        "k_3": 0.9218,
+        "k_5": 0.9432,
+        "k_10": 0.9031
+      },
+      "query_text": "AI Engineer skilled in Python PyTorch LLMs and FastAPI",
+      "query_type": "role_and_skills"
+    },
+    {
+      "query_id": "Q-RET-002",
+      "status": "SUCCESS",
+      "retrieved_count": 5,
+      "relevant_count": 6,
+      "precision": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 0.5
+      },
+      "recall": {
+        "k_3": 0.5,
+        "k_5": 0.8333,
+        "k_10": 0.8333
+      },
+      "hit_rate": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "mrr": 1.0,
+      "ndcg": {
+        "k_3": 0.9218,
+        "k_5": 0.9432,
+        "k_10": 0.9031
+      },
+      "query_text": "Backend Developer Python FastAPI PostgreSQL Docker Redis microservices",
+      "query_type": "role_and_skills"
+    },
+    {
+      "query_id": "Q-RET-003",
+      "status": "SUCCESS",
+      "retrieved_count": 5,
+      "relevant_count": 5,
+      "precision": {
+        "k_3": 1.0,
+        "k_5": 0.8,
+        "k_10": 0.4
+      },
+      "recall": {
+        "k_3": 0.6,
+        "k_5": 0.8,
+        "k_10": 0.8
+      },
+      "hit_rate": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "mrr": 1.0,
+      "ndcg": {
+        "k_3": 0.9218,
+        "k_5": 0.895,
+        "k_10": 0.895
+      },
+      "query_text": "Data Scientist Machine Learning Scikit-Learn Pandas SQL Statistics",
+      "query_type": "role_and_skills"
+    },
+    {
+      "query_id": "Q-RET-004",
+      "status": "SUCCESS",
+      "retrieved_count": 2,
+      "relevant_count": 2,
+      "precision": {
+        "k_3": 0.6667,
+        "k_5": 0.4,
+        "k_10": 0.2
+      },
+      "recall": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "hit_rate": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "mrr": 1.0,
+      "ndcg": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "query_text": "What are the common interview questions and topics for backend engineering?",
+      "query_type": "knowledge_retrieval"
+    },
+    {
+      "query_id": "Q-RET-005",
+      "status": "SUCCESS",
+      "retrieved_count": 2,
+      "relevant_count": 2,
+      "precision": {
+        "k_3": 0.6667,
+        "k_5": 0.4,
+        "k_10": 0.2
+      },
+      "recall": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "hit_rate": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "mrr": 1.0,
+      "ndcg": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "query_text": "Machine Learning Engineer learning roadmap and portfolio guidance",
+      "query_type": "knowledge_retrieval"
+    },
+    {
+      "query_id": "Q-RET-006",
+      "status": "SUCCESS",
+      "retrieved_count": 3,
+      "relevant_count": 4,
+      "precision": {
+        "k_3": 1.0,
+        "k_5": 0.6,
+        "k_10": 0.3
+      },
+      "recall": {
+        "k_3": 0.75,
+        "k_5": 0.75,
+        "k_10": 0.75
+      },
+      "hit_rate": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "mrr": 1.0,
+      "ndcg": {
+        "k_3": 1.0,
+        "k_5": 0.8791,
+        "k_10": 0.8791
+      },
+      "query_text": "Looking for any software job",
+      "query_type": "empty_or_sparse"
+    },
+    {
+      "query_id": "Q-RET-007",
+      "status": "NO_RELEVANT_ITEMS_EXIST",
+      "precision": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "recall": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "hit_rate": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "mrr": 1.0,
+      "ndcg": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "query_text": "Sous Chef gourmet pastry baking culinary arts restaurant kitchen",
+      "query_type": "out_of_domain"
+    },
+    {
+      "query_id": "Q-RET-008",
+      "status": "SUCCESS",
+      "retrieved_count": 3,
+      "relevant_count": 3,
+      "precision": {
+        "k_3": 1.0,
+        "k_5": 0.6,
+        "k_10": 0.3
+      },
+      "recall": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "hit_rate": {
+        "k_3": 1.0,
+        "k_5": 1.0,
+        "k_10": 1.0
+      },
+      "mrr": 1.0,
+      "ndcg": {
+        "k_3": 0.9778,
+        "k_5": 0.9778,
+        "k_10": 0.9778
+      },
+      "query_text": "Fresher Python developer internship graduate 2026 entry level",
+      "query_type": "fresher_entry_level"
+    }
+  ]
+}

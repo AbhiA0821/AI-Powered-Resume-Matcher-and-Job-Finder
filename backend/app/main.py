@@ -19,18 +19,46 @@ if settings.CORS_ORIGINS:
         allow_headers=["*"],
     )
 
+@app.on_event("startup")
+def startup_event():
+    import threading
+    def _warmup():
+        try:
+            from app.services.embeddings import get_embedding_model
+            get_embedding_model()
+        except Exception:
+            pass
+    threading.Thread(target=_warmup, daemon=True).start()
+
 # Root level health endpoint
 @app.get("/health", tags=["Health"], summary="Health Check")
 def health_check():
-    return {"status": "ok"}
+    from app.services.job_sources.rapidapi_job_service import get_jsearch_quota_status
+    return {
+        "status": "ok",
+        "jsearch_quota": get_jsearch_quota_status()
+    }
 
 # Root level status endpoint
 @app.get("/", tags=["Root"], summary="Root Status")
 def root():
+    from app.services.job_sources.rapidapi_job_service import get_jsearch_quota_status
     return {
-        "message": "HireAgent API is running",
-        "status": "ok"
+        "message": "AI-Powered Resume Matcher and Job Finder API is running",
+        "status": "ok",
+        "jsearch_quota": get_jsearch_quota_status()
     }
 
 # Include API v1 router
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+# Also expose assistant, career, and dashboard endpoints under /api as specified in requirements
+from app.api.v1.assistant import router as assistant_router
+from app.api.v1.career import router as career_router
+from app.api.v1.dashboard import router as dashboard_router
+app.include_router(assistant_router, prefix="/api")
+app.include_router(career_router, prefix="/api")
+app.include_router(dashboard_router, prefix="/api")
+app.include_router(dashboard_router)
+
+

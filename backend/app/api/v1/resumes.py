@@ -1,5 +1,5 @@
-from typing import List
-from fastapi import APIRouter, Depends, UploadFile, File, status
+from typing import List, Optional
+from fastapi import APIRouter, Depends, UploadFile, File, Form, status
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.user import User
@@ -17,10 +17,20 @@ router = APIRouter(prefix="/resumes", tags=["Resumes"])
 @router.post("", response_model=ResumeSummary, status_code=status.HTTP_201_CREATED, summary="Upload Resume")
 def upload_resume(
     file: UploadFile = File(...),
+    target_role: Optional[str] = Form(None),
+    preferred_location: Optional[str] = Form(None),
+    preferred_company: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    return save_and_create_resume(db, current_user, file)
+    return save_and_create_resume(
+        db,
+        current_user,
+        file,
+        target_role=target_role,
+        preferred_location=preferred_location,
+        preferred_company=preferred_company
+    )
 
 @router.get("", response_model=List[ResumeSummary], summary="List User Resumes")
 def list_resumes(
