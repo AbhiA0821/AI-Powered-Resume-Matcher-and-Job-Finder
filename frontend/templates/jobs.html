@@ -35,7 +35,9 @@
             </div>
             <div class="col-12 col-md-4">
                 <label for="role-select" class="form-label fs-8 text-secondary">Filter by Role</label>
-                <input type="text" id="role-select" name="role" value="{{ role_filter or '' }}" class="form-control" placeholder="Software Engineer, AI Engineer">
+                <div class="ha-autocomplete-wrapper position-relative">
+                    <input type="text" id="role-select" name="role" value="{{ role_filter or '' }}" class="form-control" placeholder="Software Engineer, AI Engineer" autocomplete="off" data-autocomplete="roles">
+                </div>
             </div>
             <div class="col-12 col-md-3 d-flex gap-2">
                 <button type="submit" class="btn btn-ha-primary flex-grow-1">Filter Jobs</button>
@@ -106,9 +108,14 @@
                 <a href="{{ url_for('job_detail_page', job_id=job.job_id or job.id) }}" class="btn btn-sm btn-ha-secondary">
                     View Details
                 </a>
-                {% if job.is_available and job.application_url and job.application_url.startswith(('http://', 'https://')) and job.application_url != "Application link unavailable" %}
-                <a href="{{ job.application_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ha-primary d-inline-flex align-items-center gap-1">
+                {% set job_link = job.application_url or job.apply_url %}
+                {% if job.is_available and job_link and job_link.startswith(('http://', 'https://')) and job_link != "Application link unavailable" %}
+                <a href="{{ job_link }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ha-primary d-inline-flex align-items-center gap-1">
+                    {% if job.is_direct is defined and not job.is_direct %}
+                    <span>View Job →</span>
+                    {% else %}
                     <span>Apply Now →</span>
+                    {% endif %}
                 </a>
                 {% else %}
                 <div class="d-inline-flex align-items-center gap-2">

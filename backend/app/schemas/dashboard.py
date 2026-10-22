@@ -39,6 +39,7 @@ class MatchOverview(BaseModel):
     canonical_job_url: Optional[str] = None
     source: Optional[str] = "Catalog"
     is_available: bool = True
+    is_direct: bool = True
     url_status: Optional[str] = "active"
 
 class MissingSkillRanked(BaseModel):

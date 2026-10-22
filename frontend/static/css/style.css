@@ -570,7 +570,7 @@ a:hover, a:focus {
     border-radius: var(--radius-md);
     padding: 0.55rem 0.85rem;
     font-size: 0.875rem;
-    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
 }
 
 .form-control::placeholder {
@@ -579,10 +579,10 @@ a:hover, a:focus {
 }
 
 .form-control:focus, .form-select:focus {
-    background-color: var(--input-bg) !important;
+    background-color: var(--surface-2) !important;
     border-color: var(--accent) !important;
     color: var(--text-primary) !important;
-    box-shadow: 0 0 0 2px var(--accent-border) !important;
+    box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.18) !important;
     outline: none;
 }
 
@@ -701,7 +701,7 @@ a:hover, a:focus {
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
     padding: 1.25rem 1.5rem;
-    transition: border-color var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+    transition: border-color 0.22s ease, transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease, background-color 0.22s ease;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -710,10 +710,10 @@ a:hover, a:focus {
 }
 
 .ha-job-card:hover {
-    border-color: var(--border-strong);
+    border-color: rgba(250, 204, 21, 0.35);
     background-color: var(--surface-2);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 16px rgba(250, 204, 21, 0.05);
 }
 
 .ha-job-card-header {
@@ -787,6 +787,19 @@ a:hover, a:focus {
     border: 1px solid transparent;
     padding: 0.75rem 1rem;
     font-size: 0.875rem;
+    transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), max-height 0.35s ease, margin 0.35s ease, padding 0.35s ease;
+}
+
+.alert.ha-dismissing {
+    opacity: 0 !important;
+    transform: translateY(-8px) scale(0.99) !important;
+    max-height: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none;
 }
 
 .alert-success {
@@ -811,6 +824,149 @@ a:hover, a:focus {
     background-color: var(--surface-2);
     border-color: var(--border);
     color: var(--text-primary);
+}
+
+.alert .btn-close {
+    filter: invert(1) grayscale(100%);
+    opacity: 0.75;
+    transition: opacity var(--transition-fast);
+}
+
+.alert .btn-close:hover,
+.alert .btn-close:focus {
+    opacity: 1;
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* ==========================================================================
+   Auth Pages & Professional Micro-Animations
+   ========================================================================== */
+
+.ha-auth-wrapper {
+    position: relative;
+    padding: 1rem 0;
+}
+
+.ha-auth-wrapper::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 440px;
+    height: 440px;
+    background: radial-gradient(circle, rgba(250, 204, 21, 0.07) 0%, rgba(250, 204, 21, 0.02) 45%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+    border-radius: 50%;
+    filter: blur(48px);
+}
+
+.ha-auth-card {
+    position: relative;
+    z-index: 1;
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--border);
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.ha-auth-card:hover {
+    border-color: rgba(250, 204, 21, 0.25);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.65), 0 0 20px rgba(250, 204, 21, 0.05);
+}
+
+/* Entrance Animations */
+.ha-animate-in {
+    animation: ha-fade-in-up 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes ha-fade-in-up {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Staggered Job Card Appearance */
+.ha-job-card-col:nth-child(1) .ha-animate-in { animation-delay: 0.03s; }
+.ha-job-card-col:nth-child(2) .ha-animate-in { animation-delay: 0.06s; }
+.ha-job-card-col:nth-child(3) .ha-animate-in { animation-delay: 0.09s; }
+.ha-job-card-col:nth-child(4) .ha-animate-in { animation-delay: 0.12s; }
+.ha-job-card-col:nth-child(5) .ha-animate-in { animation-delay: 0.15s; }
+.ha-job-card-col:nth-child(6) .ha-animate-in { animation-delay: 0.18s; }
+.ha-job-card-col:nth-child(n+7) .ha-animate-in { animation-delay: 0.21s; }
+
+/* ==========================================================================
+   Role Autocomplete Component
+   ========================================================================== */
+
+.ha-autocomplete-wrapper {
+    position: relative;
+    width: 100%;
+}
+
+.ha-autocomplete-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background-color: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-md);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(250, 204, 21, 0.15);
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 1060;
+    padding: 4px 0;
+    margin: 0;
+    list-style: none;
+}
+
+.ha-autocomplete-item {
+    padding: 9px 14px;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background-color var(--transition-fast), color var(--transition-fast);
+    user-select: none;
+}
+
+.ha-autocomplete-item:hover,
+.ha-autocomplete-item.active {
+    background-color: var(--accent-subtle);
+    color: var(--accent);
+    outline: none;
+}
+
+.ha-autocomplete-item .match-highlight {
+    color: var(--accent);
+    font-weight: 700;
+}
+
+.ha-autocomplete-empty {
+    padding: 10px 14px;
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Button disabled state */
+.btn:disabled,
+.btn.disabled {
+    opacity: 0.55;
+    cursor: not-allowed !important;
+    pointer-events: none;
+    box-shadow: none !important;
 }
 
 /* ==========================================================================
@@ -851,3 +1007,4 @@ a:hover, a:focus {
         padding: 1.75rem 1rem;
     }
 }
+

@@ -19,11 +19,6 @@
                 </p>
             </div>
             <div class="d-flex align-items-center gap-2 flex-wrap">
-                {% if quota and quota.monthly_limit %}
-                <span class="badge badge-surface font-mono fs-8" title="Monthly search quota">
-                    {{ quota.requests_used }}/{{ quota.monthly_limit }} Quota
-                </span>
-                {% endif %}
                 {% if overview.resume and overview.resume.exists %}
                 <span class="badge badge-surface font-mono fs-8 d-inline-flex align-items-center gap-1" title="Active Resume">
                     {{ icons.icon("document", size=12) }}
@@ -38,7 +33,7 @@
     <div id="dashboardUploadError" class="alert alert-danger d-none" role="alert"></div>
 
     <!-- MAIN RESUME MATCHER INPUT PANEL -->
-    <div class="ha-card p-4">
+    <div class="ha-card p-4 ha-animate-in">
         <form id="resumeMatcherForm" action="{{ url_for('dashboard') }}" method="POST" enctype="multipart/form-data">
             <input type="hidden" name="action" value="find_matches">
             {% if overview.resume and overview.resume.exists and resumes %}
@@ -87,23 +82,17 @@
                 <div class="d-flex align-items-center justify-content-between mb-3">
                     <label class="form-label text-white fw-semibold mb-0 d-flex align-items-center gap-2">
                         {{ icons.icon("target", size=16, class="text-accent") }}
-                        <span>JOB PREFERENCES</span>
+                        <span>TARGET ROLE PREFERENCE</span>
                     </label>
-                    <span class="text-muted fs-8">Optional filters to guide discovery</span>
+                    <span class="text-muted fs-8">Multi-role discovery across relevant roles</span>
                 </div>
 
                 <div class="row g-3">
-                    <div class="col-12 col-md-4">
-                        <label for="prefTargetRole" class="form-label fs-8 text-secondary">Target Role</label>
-                        <input type="text" id="prefTargetRole" name="target_role" class="form-control" placeholder="AI Engineer / Software Engineer" value="{{ profile.target_role or overview.profile.primary_role or '' }}">
-                    </div>
-                    <div class="col-12 col-md-4">
-                        <label for="prefLocation" class="form-label fs-8 text-secondary">Preferred Location</label>
-                        <input type="text" id="prefLocation" name="preferred_location" class="form-control" placeholder="Pune / Bangalore / Remote">
-                    </div>
-                    <div class="col-12 col-md-4">
-                        <label for="prefCompany" class="form-label fs-8 text-secondary">Preferred Company</label>
-                        <input type="text" id="prefCompany" name="preferred_company" class="form-control" placeholder="Optional">
+                    <div class="col-12">
+                        <label for="prefTargetRole" class="form-label fs-8 text-secondary">Target Role (Optional Prioritization)</label>
+                        <div class="ha-autocomplete-wrapper position-relative">
+                            <input type="text" id="prefTargetRole" name="target_role" class="form-control" placeholder="e.g. AI Engineer, Machine Learning Engineer, Data Scientist, Full Stack Developer" value="{{ profile.target_role or overview.profile.primary_role or '' }}" autocomplete="off" data-autocomplete="roles">
+                        </div>
                     </div>
                 </div>
             </div>
@@ -231,8 +220,8 @@
         <!-- Top Matching Job Cards Grid -->
         <div class="row g-3">
             {% for job in overview.matches[:10] %}
-            <div class="col-12 col-lg-6">
-                <div class="ha-job-card h-100 d-flex flex-column justify-content-between">
+            <div class="col-12 col-lg-6 ha-job-card-col">
+                <div class="ha-job-card h-100 d-flex flex-column justify-content-between ha-animate-in">
                     <div>
                         <!-- Job Card Header -->
                         <div class="ha-job-card-header mb-2">
@@ -294,9 +283,14 @@
                         <a href="{{ url_for('job_detail_page', job_id=job.job_id) }}" class="btn btn-sm btn-ha-secondary">
                             View Details
                         </a>
-                        {% if job.is_available and job.apply_url and job.apply_url.startswith(('http://', 'https://')) and job.apply_url != 'Application link unavailable' %}
-                        <a href="{{ job.apply_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ha-primary d-inline-flex align-items-center gap-1">
+                        {% set job_link = job.apply_url or job.application_url %}
+                        {% if job.is_available and job_link and job_link.startswith(('http://', 'https://')) and job_link != 'Application link unavailable' %}
+                        <a href="{{ job_link }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ha-primary d-inline-flex align-items-center gap-1">
+                            {% if job.is_direct is defined and not job.is_direct %}
+                            <span>View Job →</span>
+                            {% else %}
                             <span>Apply Now →</span>
+                            {% endif %}
                         </a>
                         {% else %}
                         <div class="d-inline-flex align-items-center gap-2">

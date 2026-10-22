@@ -2,7 +2,7 @@ import os
 import time
 import json
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
@@ -133,7 +133,7 @@ class GroqProvider:
     def get_client(self):
         if self._client is None and self.is_available():
             from groq import Groq
-            self._client = Groq(api_key=self.api_key, timeout=15.0)
+            self._client = Groq(api_key=self.api_key, timeout=5.0)
         return self._client
 
     def generate(self, prompt: str) -> Optional[CareerExplanationSchema]:
@@ -141,8 +141,14 @@ class GroqProvider:
         if not client:
             return None
 
-        # Choose supported model (with fallback to fast active models on Groq)
-        candidate_models = ["openai/gpt-oss-20b", "qwen/qwen3.8-27b", self.model_name, "openai/gpt-oss-120b"]
+        # Prioritize standard Groq models with fast fallback
+        candidate_models = []
+        for m in [self.model_name, "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
+            if m and m not in candidate_models and "gpt-oss" not in m:
+                candidate_models.append(m)
+        if not candidate_models:
+            candidate_models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+
         for mod in candidate_models:
             try:
                 chat = client.chat.completions.create(
@@ -164,6 +170,10 @@ class GroqProvider:
                 continue
         return None
 
+# In-memory LRU-style cache for grounded RAG career explanations
+_EXPLANATION_CACHE: Dict[Tuple, str] = {}
+MAX_EXPLANATION_CACHE_SIZE = 500
+
 class UnifiedLLMService:
     """Orchestrates Gemini as PRIMARY and Groq as FALLBACK with strict Pydantic validation."""
     def __init__(self):
@@ -182,6 +192,17 @@ class UnifiedLLMService:
         match_percentage: float,
         fallback_recommendation: str
     ) -> str:
+        # Cache key based on job and skills alignment
+        cache_key = (
+            job_title.strip().lower(),
+            company.strip().lower(),
+            tuple(sorted(matched_skills[:4])),
+            tuple(sorted(missing_skills[:3])),
+            round(match_percentage, 0)
+        )
+        if cache_key in _EXPLANATION_CACHE:
+            return _EXPLANATION_CACHE[cache_key]
+
         prompt = build_grounded_context_prompt(
             resume_skills=resume_skills,
             target_role=target_role,
@@ -198,7 +219,10 @@ class UnifiedLLMService:
             try:
                 res = self.gemini.generate(prompt)
                 if res:
-                    return f"{res.summary} {res.recommendation}".strip()
+                    out = f"{res.summary} {res.recommendation}".strip()
+                    if len(_EXPLANATION_CACHE) < MAX_EXPLANATION_CACHE_SIZE:
+                        _EXPLANATION_CACHE[cache_key] = out
+                    return out
             except Exception as e:
                 logger.warning(f"Gemini execution failed: {e}. Falling back to Groq.")
 
@@ -207,7 +231,10 @@ class UnifiedLLMService:
             try:
                 res = self.groq.generate(prompt)
                 if res:
-                    return f"{res.summary} {res.recommendation}".strip()
+                    out = f"{res.summary} {res.recommendation}".strip()
+                    if len(_EXPLANATION_CACHE) < MAX_EXPLANATION_CACHE_SIZE:
+                        _EXPLANATION_CACHE[cache_key] = out
+                    return out
             except Exception as e:
                 logger.warning(f"Groq execution failed: {e}. Using deterministic fallback.")
 
@@ -240,7 +267,3 @@ def generate_grounded_recommendation(
         match_percentage=match_percentage,
         fallback_recommendation=fallback_recommendation
     )
-
-
-from app.services.ai_service import build_rag_prompt
-

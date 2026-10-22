@@ -3,18 +3,19 @@ import logging
 from typing import TypedDict, List, Dict, Any, Optional
 from langgraph.graph import StateGraph, START, END
 
-from app.services.skill_service import extract_skills, detect_candidate_role
+from app.services.skill_service import extract_skills, detect_candidate_role, discover_relevant_roles
 from app.services.jobs import get_jobs_from_db
 from app.services.matching_service import match_and_rank_jobs
 from app.services.ai_service import generate_grounded_recommendation
 from app.schemas.matching import JobRecommendation
 
-class HireAgentState(TypedDict):
+class HireAgentState(TypedDict, total=False):
     user_id: int
     resume_id: Optional[int]
     resume_text: str
     extracted_skills: List[str]
     target_role: str
+    relevant_roles: List[str]
     candidate_jobs: List[Dict[str, Any]]
     ranked_jobs: List[Dict[str, Any]]
     top_k: int
@@ -29,44 +30,68 @@ def extract_skills_node(state: HireAgentState) -> Dict[str, Any]:
 # Node 2: Role Determination
 def determine_role_node(state: HireAgentState) -> Dict[str, Any]:
     current_role = state.get("target_role")
-    if current_role and current_role.strip():
-        return {"target_role": current_role.strip()}
-    
     skills = state.get("extracted_skills", [])
     text = state.get("resume_text", "")
-    detected = detect_candidate_role(skills, text)
-    return {"target_role": detected}
+    discovered = discover_relevant_roles(skills, text, target_role=current_role, max_roles=3)
+    target = discovered[0] if discovered else (current_role or "AI Engineer")
+    return {
+        "target_role": target,
+        "relevant_roles": discovered
+    }
 
 logger = logging.getLogger(__name__)
 
 # Node 3: Candidate Job Retrieval
 def retrieve_jobs_node(state: HireAgentState) -> Dict[str, Any]:
     target_role = state.get("target_role") or "Software Engineer"
+    relevant_roles = state.get("relevant_roles") or [target_role]
     skills = state.get("extracted_skills", [])
     
     candidate_jobs: List[Dict[str, Any]] = []
+    seen_ids = set()
+    seen_urls = set()
     seen_keys = set()
 
-    # Define parallel worker tasks for fresh RapidAPI and Qdrant semantic search
-    def _fetch_rapidapi() -> List[Dict[str, Any]]:
+    # Define parallel worker tasks for multi-role RapidAPI and Qdrant semantic search
+    def _fetch_single_rapidapi_role(role: str) -> List[Dict[str, Any]]:
         try:
             from app.services.job_sources.rapidapi_job_service import search_live_jobs, to_hireagent_job_dict
             from app.services.job_indexing import index_live_jobs_in_qdrant
-            live_normalized = search_live_jobs(query=target_role, location="India", num_pages=1)
+            live_normalized = search_live_jobs(query=role, location="India", num_pages=1)
             if live_normalized:
-                # Index into Qdrant Cloud asynchronously in daemon thread (zero user latency)
                 import threading
                 threading.Thread(target=index_live_jobs_in_qdrant, args=(live_normalized,), daemon=True).start()
-                return [to_hireagent_job_dict(norm_job) for norm_job in live_normalized]
+                return [to_hireagent_job_dict(norm_job, role_category=role) for norm_job in live_normalized]
         except Exception as e:
-            logger.warning(f"RapidAPI retrieval failed: {e}")
+            logger.warning(f"RapidAPI retrieval for role '{role}' failed: {e}")
         return []
+
+    def _fetch_rapidapi() -> List[Dict[str, Any]]:
+        # Search target role and other discovered relevant roles (bounded at 3 roles maximum)
+        roles_to_fetch = relevant_roles[:3] if relevant_roles else [target_role]
+        results: List[Dict[str, Any]] = []
+        if len(roles_to_fetch) == 1:
+            return _fetch_single_rapidapi_role(roles_to_fetch[0])
+
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(roles_to_fetch), 3)) as executor:
+            future_to_role = {executor.submit(_fetch_single_rapidapi_role, r): r for r in roles_to_fetch}
+            for f in concurrent.futures.as_completed(future_to_role):
+                role_name = future_to_role[f]
+                try:
+                    res = f.result(timeout=15.0)
+                    if res:
+                        results.extend(res)
+                except Exception as e:
+                    logger.warning(f"RapidAPI query for role '{role_name}' timed out or failed: {e}")
+        return results
 
     def _fetch_qdrant() -> List[Dict[str, Any]]:
         try:
             from app.services.job_indexing import search_jobs_by_query_semantic
-            skills_str = ", ".join(skills[:8]) if skills else target_role
-            query_text = f"{target_role}. Key skills: {skills_str}"
+            roles_str = ", ".join(relevant_roles[:3]) if relevant_roles else target_role
+            skills_str = ", ".join(skills[:8]) if skills else roles_str
+            query_text = f"{roles_str}. Key skills: {skills_str}"
             return search_jobs_by_query_semantic(query_text=query_text, limit=30)
         except Exception as e:
             logger.warning(f"Qdrant semantic retrieval failed: {e}")
@@ -79,17 +104,32 @@ def retrieve_jobs_node(state: HireAgentState) -> Dict[str, Any]:
         rapid_results = f_rapid.result()
         qdrant_results = f_qdrant.result()
 
+    def _add_job_if_unique(j: Dict[str, Any]):
+        ext_id = str(j.get("external_job_id") or j.get("job_id") or "")
+        url = (j.get("canonical_job_url") or j.get("application_url") or "").strip().lower()
+        company = (j.get("company") or "").strip().lower()
+        title = (j.get("job_title") or j.get("title") or "").strip().lower()
+        key = (company, title)
+
+        if ext_id and ext_id in seen_ids:
+            return
+        if url and url != "application link unavailable" and url in seen_urls:
+            return
+        if key in seen_keys:
+            return
+
+        if ext_id:
+            seen_ids.add(ext_id)
+        if url and url != "application link unavailable":
+            seen_urls.add(url)
+        seen_keys.add(key)
+        candidate_jobs.append(j)
+
     for h_job in rapid_results:
-        key = (h_job.get("company", "").strip().lower(), h_job.get("job_title", "").strip().lower())
-        if key not in seen_keys:
-            seen_keys.add(key)
-            candidate_jobs.append(h_job)
+        _add_job_if_unique(h_job)
 
     for q_job in qdrant_results:
-        key = (q_job.get("company", "").strip().lower(), q_job.get("job_title", "").strip().lower())
-        if key not in seen_keys:
-            seen_keys.add(key)
-            candidate_jobs.append(q_job)
+        _add_job_if_unique(q_job)
 
     # 3. SQLite job catalog (Static catalog / baseline fallback)
     try:
@@ -100,10 +140,7 @@ def retrieve_jobs_node(state: HireAgentState) -> Dict[str, Any]:
             cat_job_copy["source_type"] = cat_job.get("source_type") or "static_catalog"
             cat_job_copy["location"] = cat_job.get("location") or "India"
             cat_job_copy["posted_at"] = cat_job.get("posted_at")
-            key = (cat_job_copy.get("company", "").strip().lower(), cat_job_copy.get("job_title", "").strip().lower())
-            if key not in seen_keys:
-                seen_keys.add(key)
-                candidate_jobs.append(cat_job_copy)
+            _add_job_if_unique(cat_job_copy)
     except Exception as e:
         logger.error(f"SQLite catalog retrieval failed: {e}")
 
@@ -114,12 +151,14 @@ def hybrid_match_and_rank_node(state: HireAgentState) -> Dict[str, Any]:
     resume_text = state.get("resume_text", "")
     candidate_jobs = state.get("candidate_jobs", [])
     target_role = state.get("target_role", "")
+    relevant_roles = state.get("relevant_roles")
     top_k = state.get("top_k", 10)
 
     ranked = match_and_rank_jobs(
         resume_text=resume_text,
         jobs=candidate_jobs,
         target_role=target_role,
+        relevant_roles=relevant_roles,
         top_k=top_k
     )
     return {"ranked_jobs": ranked}

@@ -1,5 +1,7 @@
 import re
+import time
 import math
+import logging
 from typing import List, Dict, Any, Optional, Tuple
 import pandas as pd
 from sklearn.neighbors import NearestNeighbors
@@ -13,6 +15,12 @@ from app.services.skill_service import (
     normalize_skill
 )
 from app.services.embeddings import embed_text, embed_texts
+
+logger = logging.getLogger("hireagent.matching")
+
+# In-memory LRU-style cache for job embeddings to eliminate repeated transformer calls
+_JOB_EMBEDDINGS_CACHE: Dict[str, List[float]] = {}
+MAX_JOB_CACHE_SIZE = 5000
 
 class HybridKNNMatcher:
     """Encapsulates the existing TF-IDF + NearestNeighbors matching logic from matcher.py.
@@ -73,22 +81,39 @@ def compute_skill_score(matched_skills: List[str], required_skills: List[str]) -
     ratio = len(matched_skills) / len(required_skills)
     return round(min(100.0, max(0.0, ratio * 100.0)), 1)
 
-def compute_role_score(candidate_role: str, job_role: str, job_title: str) -> Tuple[float, str]:
-    """Calculates role relevance score (0 - 100) and qualitative label."""
+def compute_role_score(
+    candidate_role: str,
+    job_role: str,
+    job_title: str,
+    relevant_roles: Optional[List[str]] = None
+) -> Tuple[float, str]:
+    """Calculates role relevance score (0 - 100) and qualitative label.
+    Prioritizes the candidate's selected target role (100.0), while also rewarding
+    jobs matching any of the candidate's discovered relevant roles (85.0).
+    """
     cand = (candidate_role or "").lower().strip()
     j_role = (job_role or "").lower().strip()
     j_title = (job_title or "").lower().strip()
 
-    if cand in j_role or cand in j_title or j_role in cand:
+    # 1. Exact match with primary/selected target role
+    if cand and (cand in j_role or cand in j_title or j_role in cand):
         return 100.0, "High"
 
-    # Related engineering roles
+    # 2. Match with any discovered relevant role supported by candidate's resume
+    if relevant_roles:
+        for r in relevant_roles:
+            r_clean = r.lower().strip()
+            if r_clean and (r_clean in j_role or r_clean in j_title or j_role in r_clean):
+                return 85.0, "High"
+
+    # 3. Related engineering clusters
     related_clusters = [
-        {"ai engineer", "machine learning engineer", "data scientist", "deep learning", "nlp"},
-        {"backend developer", "python developer", "software engineer", "full stack"},
+        {"ai engineer", "machine learning engineer", "data scientist", "deep learning", "nlp", "generative ai", "llm"},
+        {"backend developer", "python developer", "software engineer", "full stack", "data engineer"},
     ]
+    all_target_roles = [cand] + ([r.lower().strip() for r in relevant_roles] if relevant_roles else [])
     for cluster in related_clusters:
-        if any(c in cand for c in cluster) and any(c in j_role or c in j_title for c in cluster):
+        if any(any(c in t for c in cluster) for t in all_target_roles if t) and any(c in j_role or c in j_title for c in cluster):
             return 75.0, "Moderate"
 
     return 40.0, "Fair"
@@ -131,7 +156,8 @@ def match_and_rank_jobs(
     jobs: List[Dict[str, Any]],
     target_role: Optional[str] = None,
     candidate_exp: Optional[str] = None,
-    top_k: int = 10
+    top_k: int = 10,
+    relevant_roles: Optional[List[str]] = None
 ) -> List[Dict[str, Any]]:
     """Performs hybrid job matching across candidate jobs and ranks the Top K results.
     
@@ -144,37 +170,76 @@ def match_and_rank_jobs(
         0.05 * ML TF-IDF/KNN Score
     )
     """
+    t_start = time.time()
     if not jobs:
         return []
 
     resume_skills = extract_skills(resume_text)
     detected_role = target_role or detect_candidate_role(resume_skills, resume_text)
+    if not relevant_roles:
+        from app.services.skill_service import discover_relevant_roles
+        relevant_roles = discover_relevant_roles(resume_skills, resume_text, target_role=detected_role, max_roles=3)
 
-    # Pre-generate resume embedding once for efficiency
+    # 1. Candidate Shortlisting:
+    # If many candidate jobs exist, shortlist using instant skill overlap & multi-role matching
+    # to avoid running expensive transformer encodings on completely unrelated roles.
+    if len(jobs) > 50:
+        shortlisted = []
+        for j in jobs:
+            req_list = parse_job_required_skills(j.get("required_skills", ""))
+            matched, _ = analyze_skill_gap(resume_skills, req_list)
+            s_score = compute_skill_score(matched, req_list)
+            r_score, _ = compute_role_score(detected_role, j.get("job_role", ""), j.get("job_title", ""), relevant_roles=relevant_roles)
+            prelim = (0.60 * s_score) + (0.40 * r_score)
+            shortlisted.append((prelim, j))
+        shortlisted.sort(key=lambda x: x[0], reverse=True)
+        candidate_jobs = [j for _, j in shortlisted[:50]]
+    else:
+        candidate_jobs = list(jobs)
+
+    # 2. Pre-generate resume embedding once for efficiency
     try:
         resume_embedding = embed_text(resume_text[:2000] if len(resume_text) > 2000 else resume_text)
     except Exception:
         resume_embedding = []
 
-    # Initialize TF-IDF/KNN matcher with candidate jobs
+    # 3. Initialize TF-IDF/KNN matcher with shortlisted candidate jobs
     knn_matcher = HybridKNNMatcher()
-    knn_matcher.fit(jobs)
+    knn_matcher.fit(candidate_jobs)
 
-    # Pre-compute semantic representations for all candidate jobs in a single batch pass (100x speedup)
+    # 4. Resolve Job Embeddings with in-memory caching to eliminate repeated encodings
     job_summary_texts = [
         f"{job.get('job_title', 'Software Engineer')} at {job.get('company', 'Company')}. Role: {job.get('job_role', '')}. Skills: {job.get('required_skills', '')}. {(job.get('description') or '')[:300]}"
-        for job in jobs
+        for job in candidate_jobs
     ]
     job_embeddings: List[List[float]] = []
     if resume_embedding and job_summary_texts:
-        try:
-            job_embeddings = embed_texts(job_summary_texts)
-        except Exception:
-            job_embeddings = []
+        uncached_indices = []
+        uncached_texts = []
+        temp_embeddings: List[Optional[List[float]]] = [None] * len(job_summary_texts)
+
+        for i, txt in enumerate(job_summary_texts):
+            if txt in _JOB_EMBEDDINGS_CACHE:
+                temp_embeddings[i] = _JOB_EMBEDDINGS_CACHE[txt]
+            else:
+                uncached_indices.append(i)
+                uncached_texts.append(txt)
+
+        if uncached_texts:
+            try:
+                new_vectors = embed_texts(uncached_texts)
+                for pos, vec in zip(uncached_indices, new_vectors):
+                    temp_embeddings[pos] = vec
+                    if len(_JOB_EMBEDDINGS_CACHE) < MAX_JOB_CACHE_SIZE:
+                        _JOB_EMBEDDINGS_CACHE[job_summary_texts[pos]] = vec
+            except Exception as e:
+                logger.warning(f"Batch embedding failed for {len(uncached_texts)} jobs: {e}")
+
+        job_embeddings = [v if v is not None else [] for v in temp_embeddings]
 
     scored_jobs = []
 
-    for idx, job in enumerate(jobs):
+    for idx, job in enumerate(candidate_jobs):
         job_id = job.get("id", 0)
         job_title = job.get("job_title", "Software Engineer")
         company = job.get("company", "Company")
@@ -189,9 +254,9 @@ def match_and_rank_jobs(
         skill_score = compute_skill_score(matched_skills, req_skills_list)
 
         # 2. Role Score
-        role_score, role_relevance = compute_role_score(detected_role, job_role, job_title)
+        role_score, role_relevance = compute_role_score(detected_role, job_role, job_title, relevant_roles=relevant_roles)
 
-        # 3. Semantic Similarity (utilize pre-computed batch vector)
+        # 3. Semantic Similarity (utilize cached/batch vector)
         if resume_embedding and idx < len(job_embeddings) and job_embeddings[idx]:
             job_emb = job_embeddings[idx]
             dot = sum(a * b for a, b in zip(resume_embedding, job_emb))
@@ -228,6 +293,10 @@ def match_and_rank_jobs(
         canon_url = job.get("canonical_job_url") or app_url
         explicit_jid = job.get("job_id") or job.get("external_job_id") or job_id
 
+        is_avail = job.get("is_available")
+        if is_avail is None:
+            is_avail = bool(app_url and str(app_url).strip().startswith(("http://", "https://")) and app_url != "Application link unavailable" and job.get("source_type") != "static_catalog")
+
         scored_jobs.append({
             "id": job.get("id") or (int(ext_id) if ext_id.isdigit() else job_id),
             "job_id": explicit_jid,
@@ -241,16 +310,23 @@ def match_and_rank_jobs(
             "role_relevance": role_relevance,
             "recommendation": recommendation_text,
             "application_url": app_url,
+            "apply_url": app_url,
             "canonical_job_url": canon_url,
             "source": job.get("source") or "HireAgent Test Catalog",
             "source_type": job.get("source_type") or "static_catalog",
             "location": job.get("location") or "India",
-            "posted_at": job.get("posted_at")
+            "posted_at": job.get("posted_at"),
+            "is_available": bool(is_avail),
+            "is_direct": bool(job.get("is_direct", True)),
+            "url_status": job.get("url_status", "active" if is_avail else "unavailable")
         })
 
-    # Sort strictly in descending order by hybrid match percentage
-    scored_jobs.sort(key=lambda x: x["match_percentage"], reverse=True)
-    return apply_employer_diversity(scored_jobs, top_k=top_k, max_per_employer=2)
+    # Sort strictly in descending order by hybrid match percentage, prioritizing genuinely available active jobs
+    scored_jobs.sort(key=lambda x: (1 if x.get("is_available") else 0, x["match_percentage"]), reverse=True)
+    result = apply_employer_diversity(scored_jobs, top_k=top_k, max_per_employer=2)
+    elapsed = time.time() - t_start
+    logger.info(f"[TIMING] match_and_rank_jobs: processed {len(jobs)} candidates (shortlist: {len(candidate_jobs)}) in {elapsed:.3f}s -> {len(result)} ranked")
+    return result
 
 def apply_employer_diversity(
     ranked_jobs: List[Dict[str, Any]],

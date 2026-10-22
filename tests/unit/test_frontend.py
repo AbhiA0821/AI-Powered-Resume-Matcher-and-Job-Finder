@@ -73,7 +73,7 @@ def test_dashboard_renders_empty_state_when_no_resumes(client):
         assert res.status_code == 200
         html = res.data.decode("utf-8")
         assert "No Resume Uploaded Yet" in html
-        assert "3/200 Quota" in html
+        assert "Quota" not in html
 
 
 def test_no_secrets_leaked_in_html(client):

@@ -118,7 +118,12 @@ def index_live_jobs_in_qdrant(jobs: List[Any]) -> Dict[str, Any]:
             continue
         job_dict["source_type"] = "live_api"
         normalized_dicts.append(job_dict)
-    return index_all_jobs(normalized_dicts)
+    try:
+        return index_all_jobs(normalized_dicts)
+    except Exception as e:
+        import logging
+        logging.getLogger("hireagent.indexing").warning(f"Background Qdrant indexing for live jobs skipped: {e}")
+        return {"indexed_count": 0, "status": "skipped", "error": str(e)}
 
 
 def search_jobs_by_query_semantic(query_text: str, limit: int = 5) -> List[Dict[str, Any]]:

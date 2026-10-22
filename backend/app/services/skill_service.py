@@ -1,5 +1,5 @@
 import re
-from typing import List, Dict, Tuple, Set
+from typing import List, Dict, Tuple, Set, Optional
 
 # Comprehensive canonical skills dictionary
 CANONICAL_SKILLS = [
@@ -51,7 +51,7 @@ SKILL_ALIASES = {
 ROLE_SKILL_MATRIX = {
     "AI Engineer": [
         "python", "pytorch", "transformers", "large language models", "langchain",
-        "generative ai", "fastapi", "docker", "rag", "vector db", "qdrant"
+        "generative ai", "fastapi", "docker", "rag", "vector db", "qdrant", "deep learning"
     ],
     "Machine Learning Engineer": [
         "python", "machine learning", "deep learning", "tensorflow", "pytorch",
@@ -61,12 +61,41 @@ ROLE_SKILL_MATRIX = {
         "python", "r", "sql", "pandas", "numpy", "scikit-learn", "statistics",
         "data analysis", "data analytics", "data visualization", "machine learning"
     ],
+    "Data Analyst": [
+        "sql", "data analysis", "data analytics", "data visualization", "tableau",
+        "powerbi", "pandas", "numpy", "statistics", "python"
+    ],
+    "Data Engineer": [
+        "python", "sql", "spark", "hadoop", "kafka", "snowflake", "postgresql",
+        "mysql", "etl", "docker", "cloud", "aws", "data engineering", "airflow"
+    ],
+    "Generative AI Engineer": [
+        "generative ai", "large language models", "prompt engineering", "langchain",
+        "transformers", "rag", "python", "vector db", "qdrant", "fastapi"
+    ],
+    "NLP Engineer": [
+        "natural language processing", "transformers", "bert", "large language models",
+        "python", "pytorch", "deep learning", "spacy", "huggingface"
+    ],
+    "Python Developer": [
+        "python", "fastapi", "flask", "django", "sql", "mysql", "postgresql",
+        "git", "rest api", "docker", "sqlite"
+    ],
+    "LLM Application Developer": [
+        "large language models", "langchain", "fastapi", "python", "generative ai",
+        "rag", "vector db", "prompt engineering", "transformers"
+    ],
+    "MLOps Engineer": [
+        "mlops", "docker", "kubernetes", "ci/cd", "python", "machine learning",
+        "cloud", "aws", "git", "linux"
+    ],
     "Backend Developer": [
         "python", "fastapi", "flask", "django", "sql", "postgresql", "mysql",
         "redis", "docker", "rest api", "microservices", "git"
     ],
-    "Python Developer": [
-        "python", "flask", "django", "sql", "mysql", "git", "rest api", "html", "css"
+    "Full Stack Developer": [
+        "javascript", "typescript", "react", "nodejs", "python", "html", "css",
+        "sql", "rest api", "git"
     ]
 }
 
@@ -152,3 +181,63 @@ def detect_candidate_role(resume_skills: List[str], extracted_text: str = "") ->
             best_role = role
 
     return best_role
+
+def discover_relevant_roles(
+    resume_skills: List[str],
+    extracted_text: str = "",
+    target_role: Optional[str] = None,
+    max_roles: int = 3
+) -> List[str]:
+    """
+    Identifies a small, relevant set of job roles grounded in the candidate's actual skills and resume text.
+    - If target_role is provided (e.g. user selected 'AI Engineer'), it is prioritized as the first role query.
+    - Additional relevant roles are discovered from candidate skills and experience (e.g. 'Machine Learning Engineer', 'Data Scientist').
+    - Returns a bounded, deduplicated list of roles (at most max_roles).
+    """
+    normalized_skills = {normalize_skill(s) for s in resume_skills}
+    text_lower = (extracted_text or "").lower()
+
+    scored_roles = []
+    target_norm = target_role.strip().lower() if target_role and target_role.strip() else None
+
+    for role, role_skills in ROLE_SKILL_MATRIX.items():
+        overlap = sum(1 for s in role_skills if s in normalized_skills)
+        if not role_skills:
+            continue
+        coverage = overlap / len(role_skills)
+
+        role_lower = role.lower()
+        text_boost = 0.0
+        if role_lower in text_lower:
+            text_boost += 1.5
+        elif any(part in text_lower for part in role_lower.split() if len(part) > 3):
+            text_boost += 0.5
+
+        # Only qualify roles that have genuine, meaningful overlap (>= 2 technical skills or >= 1 skill with explicit text mention)
+        if overlap >= 2 or (overlap >= 1 and text_boost > 0):
+            score = (overlap * 2.0) + (coverage * 5.0) + text_boost
+            scored_roles.append((role, score, overlap))
+
+    # Sort descending by score, then overlap
+    scored_roles.sort(key=lambda x: (x[1], x[2]), reverse=True)
+
+    discovered: List[str] = []
+
+    # If target_role is specified, place it first
+    if target_role and target_role.strip():
+        # Match case with ROLE_SKILL_MATRIX if known
+        matched_canonical = next((r for r in ROLE_SKILL_MATRIX if r.lower() == target_norm), target_role.strip())
+        discovered.append(matched_canonical)
+    elif scored_roles:
+        discovered.append(scored_roles[0][0])
+    else:
+        discovered.append("AI Engineer")
+
+    # Add other top qualifying roles up to max_roles
+    for role, _, _ in scored_roles:
+        if role not in discovered and (not target_norm or role.lower() != target_norm):
+            discovered.append(role)
+        if len(discovered) >= max_roles:
+            break
+
+    return discovered

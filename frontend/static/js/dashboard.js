@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileSelectedName = document.getElementById('fileSelectedName');
     const uploadErrorAlert = document.getElementById('dashboardUploadError');
     const currentResumeId = document.getElementById('currentResumeId');
+    const btnFindMatches = document.getElementById('btnFindMatchingJobs');
 
     const prefTargetRole = document.getElementById('prefTargetRole');
     const prefLocation = document.getElementById('prefLocation');
@@ -17,16 +18,49 @@ document.addEventListener('DOMContentLoaded', () => {
     const aiProcessingTitle = document.getElementById('aiProcessingTitle');
     const aiProcessingSubtitle = document.getElementById('aiProcessingSubtitle');
 
+    let isSubmitting = false;
+    let processingTimer = null;
+    let overallTimeoutTimer = null;
+    const OVERALL_TIMEOUT_MS = 25000; // 25s client-side timeout
+
+    function setButtonLoading(loading) {
+        if (!btnFindMatches) return;
+        if (loading) {
+            isSubmitting = true;
+            btnFindMatches.disabled = true;
+            btnFindMatches.classList.add('disabled');
+            btnFindMatches.innerHTML = `<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span><span class="fw-semibold">Processing...</span>`;
+        } else {
+            isSubmitting = false;
+            btnFindMatches.disabled = false;
+            btnFindMatches.classList.remove('disabled');
+            btnFindMatches.innerHTML = `<span class="fw-semibold">Find Matching Jobs →</span>`;
+        }
+    }
+
     function showError(msg) {
+        clearOverallTimeout();
+        setButtonLoading(false);
         if (uploadErrorAlert) {
             uploadErrorAlert.innerHTML = `
                 <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-                    <span>${msg}</span>
-                    <button type="button" class="btn btn-sm btn-outline-light font-mono" onclick="document.getElementById('btnFindMatchingJobs').click()">Try Again</button>
+                    <div class="d-flex align-items-center gap-2">
+                        <svg class="ha-icon text-danger flex-shrink-0" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                        <span>${msg}</span>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-light font-mono" id="btnRetryMatching">Try Again</button>
                 </div>
             `;
             uploadErrorAlert.classList.remove('d-none');
             uploadErrorAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+            const retryBtn = document.getElementById('btnRetryMatching');
+            if (retryBtn) {
+                retryBtn.addEventListener('click', () => {
+                    clearError();
+                    if (matcherForm) matcherForm.requestSubmit();
+                });
+            }
         } else {
             alert(msg);
         }
@@ -40,7 +74,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Dynamic processing message sequence
-    let processingTimer = null;
     function showProcessingState() {
         if (initialSection) initialSection.classList.add('d-none');
         if (resultsSection) resultsSection.classList.add('d-none');
@@ -61,15 +94,31 @@ document.addEventListener('DOMContentLoaded', () => {
             if (aiProcessingTitle) aiProcessingTitle.textContent = messages[step].title;
             if (aiProcessingSubtitle) aiProcessingSubtitle.textContent = messages[step].sub;
         }, 2200);
+
+        // Overall safety timeout
+        clearTimeout(overallTimeoutTimer);
+        overallTimeoutTimer = setTimeout(() => {
+            hideProcessingState();
+            setButtonLoading(false);
+            showError("Resume analysis and matching is taking longer than expected. Please check your network connection or try again.");
+        }, OVERALL_TIMEOUT_MS);
     }
 
     function hideProcessingState() {
+        clearOverallTimeout();
         if (processingTimer) clearInterval(processingTimer);
         if (processingSection) processingSection.classList.add('d-none');
         if (resultsSection) {
             resultsSection.classList.remove('d-none');
         } else if (initialSection) {
             initialSection.classList.remove('d-none');
+        }
+    }
+
+    function clearOverallTimeout() {
+        if (overallTimeoutTimer) {
+            clearTimeout(overallTimeoutTimer);
+            overallTimeoutTimer = null;
         }
     }
 
@@ -136,6 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (matcherForm) {
         matcherForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (isSubmitting) return; // Prevent duplicate concurrent submissions
             clearError();
 
             const file = resumeFileInput && resumeFileInput.files ? resumeFileInput.files[0] : null;
@@ -146,6 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
+            setButtonLoading(true);
             showProcessingState();
 
             try {
@@ -172,7 +223,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
 
                     if (res.ok) {
-                        pollUntilFinished();
+                        clearOverallTimeout();
+                        // Backend pipeline finished synchronously; refresh directly
+                        window.location.reload();
                     } else {
                         const data = await res.json().catch(() => ({}));
                         if (res.status === 401 || (data && data.redirect)) {
@@ -181,14 +234,15 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                         showError(data.error || 'Failed to process resume. Please try again.');
                         hideProcessingState();
+                        setButtonLoading(false);
                     }
                 } else {
                     // Match existing resume + preferences
                     const payload = {
                         resume_id: parseInt(currentResumeId.value, 10),
-                        target_role: prefTargetRole ? prefTargetRole.value.trim() : null,
-                        preferred_location: prefLocation ? prefLocation.value.trim() : null,
-                        preferred_company: prefCompany ? prefCompany.value.trim() : null
+                        target_role: (prefTargetRole && prefTargetRole.value.trim()) ? prefTargetRole.value.trim() : null,
+                        preferred_location: (prefLocation && prefLocation.value.trim()) ? prefLocation.value.trim() : null,
+                        preferred_company: (prefCompany && prefCompany.value.trim()) ? prefCompany.value.trim() : null
                     };
 
                     const res = await fetch('/dashboard/rerun', {
@@ -201,7 +255,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
 
                     if (res.ok) {
-                        pollUntilFinished();
+                        clearOverallTimeout();
+                        // Backend pipeline finished synchronously; refresh directly
+                        window.location.reload();
                     } else {
                         const data = await res.json().catch(() => ({}));
                         if (res.status === 401 || (data && data.redirect)) {
@@ -210,22 +266,40 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                         showError(data.error || 'Failed to re-match jobs. Please try again.');
                         hideProcessingState();
+                        setButtonLoading(false);
                     }
                 }
             } catch (err) {
-                // If fetch fails, try traditional form submit
+                // If fetch fails (network interruption), fall back to traditional submit
+                clearOverallTimeout();
                 matcherForm.submit();
             }
         });
     }
 
-    // Polling for processing completion
-    let pollInterval = 2000;
+    // Polling for processing completion (used if page opened while processing is in flight)
     let pollAttempts = 0;
     const maxPollAttempts = 15;
 
     async function pollUntilFinished() {
         pollAttempts = 0;
+
+        // Immediate initial check
+        try {
+            const res = await fetch('/dashboard/poll');
+            if (res.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            if (res.ok) {
+                const data = await res.json();
+                if (!data.is_processing) {
+                    window.location.reload();
+                    return;
+                }
+            }
+        } catch (e) {}
+
         const intervalId = setInterval(async () => {
             if (document.hidden) return;
 
@@ -245,8 +319,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 if (res.ok) {
                     const data = await res.json();
-                    const isProcessing = Boolean(data.is_processing);
-                    if (!isProcessing) {
+                    if (!data.is_processing) {
                         clearInterval(intervalId);
                         window.location.reload();
                     }
@@ -254,7 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (e) {
                 // Ignore transient network errors during poll
             }
-        }, pollInterval);
+        }, 1500);
     }
 
     if (processingSection && !processingSection.classList.contains('d-none')) {

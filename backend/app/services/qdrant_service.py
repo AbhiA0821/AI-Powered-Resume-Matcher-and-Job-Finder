@@ -23,7 +23,8 @@ def get_qdrant_client() -> QdrantClient:
         if not url or not api_key:
             raise RuntimeError("Qdrant Cloud credentials missing. Please set QDRANT_URL and QDRANT_API_KEY environment variables.")
         
-        _qdrant_client_instance = QdrantClient(url=url, api_key=api_key, timeout=30.0)
+        qdrant_timeout = float(os.getenv("QDRANT_TIMEOUT", "6.0"))
+        _qdrant_client_instance = QdrantClient(url=url, api_key=api_key, timeout=qdrant_timeout)
     return _qdrant_client_instance
 
 _ENSURED_COLLECTIONS = set()

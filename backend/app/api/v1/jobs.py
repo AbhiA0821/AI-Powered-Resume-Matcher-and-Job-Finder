@@ -5,6 +5,10 @@ from app.services.jobs import get_jobs_from_db
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 
+import logging
+
+logger = logging.getLogger("hireagent.api.jobs")
+
 @router.get("", response_model=JobListResponse, summary="List Job Opportunities")
 def list_jobs(
     search: Optional[str] = Query(None, description="Search term for job title, skills, or description"),
@@ -12,8 +16,53 @@ def list_jobs(
     limit: int = Query(50, ge=1, le=200, description="Maximum number of job listings to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination")
 ):
-    """Fetches job listings from underlying database with search and role filtering."""
-    return get_jobs_from_db(search=search, role=role, limit=limit, offset=offset)
+    """Fetches job listings from live JSearch provider (with caching) and fallback database."""
+    query = ""
+    clean_role = role.strip() if isinstance(role, str) and role.strip() else None
+    clean_search = search.strip() if isinstance(search, str) and search.strip() else None
+
+    if clean_role:
+        query = clean_role
+    elif clean_search:
+        query = clean_search
+
+    live_jobs = []
+    if query:
+        try:
+            from app.services.job_sources.rapidapi_job_service import search_live_jobs, to_hireagent_job_dict
+            raw_live = search_live_jobs(query=query, location="India", num_pages=1)
+            live_jobs = [to_hireagent_job_dict(j) for j in raw_live]
+        except Exception as e:
+            logger.warning(f"Live JSearch in list_jobs failed: {e}")
+    elif offset == 0:
+        try:
+            from app.services.job_sources.rapidapi_job_service import search_live_jobs, to_hireagent_job_dict
+            raw_live = search_live_jobs(query="Software Engineer", location="India", num_pages=1)
+            live_jobs = [to_hireagent_job_dict(j) for j in raw_live]
+        except Exception as e:
+            logger.warning(f"Default live JSearch in list_jobs failed: {e}")
+
+    # Query local database as supplementary catalog/fallback
+    db_data = get_jobs_from_db(search=clean_search, role=clean_role, limit=limit, offset=offset)
+    db_jobs = db_data.get("jobs", [])
+
+    # Merge live jobs and db jobs, prioritizing live jobs
+    merged = []
+    seen = set()
+    for j in live_jobs:
+        key = (j.get("company", "").strip().lower(), j.get("job_title", "").strip().lower())
+        if key not in seen:
+            seen.add(key)
+            merged.append(j)
+
+    for j in db_jobs:
+        key = (j.get("company", "").strip().lower(), j.get("job_title", "").strip().lower())
+        if key not in seen:
+            seen.add(key)
+            merged.append(j)
+
+    total_count = len(merged) if live_jobs else db_data.get("total", len(merged))
+    return {"total": total_count, "jobs": merged[:limit]}
 
 @router.get("/quota", summary="JSearch API Quota & Usage Status")
 def get_jsearch_quota():
@@ -70,6 +119,7 @@ def get_job_by_id(job_id: str):
                         "location": m.get("location") or "India",
                         "source": m.get("source") or "HireAgent Test Catalog",
                         "source_type": m.get("source_type") or "static_catalog",
+                        "is_direct": m.get("is_direct", True),
                         "posted_at": m.get("posted_at") or ""
                     }
                     break

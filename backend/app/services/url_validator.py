@@ -134,6 +134,11 @@ def validate_job_url(url: Optional[str], check_network: bool = True) -> Tuple[bo
         return True, "timeout_fallback"
     except Exception as e:
         logger.debug(f"URL validation error for {clean_url}: {e}")
+        # Valid external URLs (e.g. LinkedIn, corporate ATS) may block automated Python requests;
+        # treat structurally valid HTTP/HTTPS links as usable in browser
+        if clean_url.startswith(("http://", "https://")):
+            _URL_VALIDATION_CACHE[clean_url] = (now, True, "unverified_active")
+            return True, "unverified_active"
         _URL_VALIDATION_CACHE[clean_url] = (now, False, "connection_failed")
         return False, "connection_failed"
 

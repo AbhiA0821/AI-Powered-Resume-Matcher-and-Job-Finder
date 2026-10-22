@@ -26,6 +26,7 @@ class RapidAPIJob(BaseModel):
     salary: str = "Not specified"
     source: str = "other"  # linkedin, naukri, indeed, glassdoor, etc.
     source_url: Optional[str] = None
+    is_direct: bool = True
     posted_at: Optional[str] = None
     fetched_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     is_fresh: bool = True
@@ -62,16 +63,12 @@ def _detect_source_platform(raw_job: Dict[str, Any]) -> str:
         return publisher.strip().capitalize()
     return "Web"
 
-def extract_best_apply_url(raw_job: Dict[str, Any]) -> Optional[str]:
-    """Extracts the most direct, specific application URL for a job posting.
-    Priority hierarchy:
-    1. Direct employer application link (is_direct == True) in apply_options
-    2. Known ATS job posting domains (Greenhouse, Lever, Workday, Ashby, SmartRecruiters, etc.)
-    3. Specific job posting links in apply_options (path contains job identifiers, not root homepages)
-    4. raw_job.get("job_apply_link") if valid http URL
-    5. Fallback candidate links (apply_link, url, link) if specific
-    6. Exclude generic company root homepages and search engine landing pages when specific links exist
-    Never hallucinate or fabricate URLs. Returns None if no valid link exists.
+def extract_best_apply_url(raw_job: Dict[str, Any]) -> Tuple[Optional[str], bool]:
+    """Extracts the most direct application URL or valid job-listing URL.
+    Returns (url: Optional[str], is_direct: bool).
+    - Direct employer application link (is_direct == True) or known ATS -> (url, True)
+    - Valid job listing portal URL -> (url, False)
+    - None if unavailable -> (None, False)
     """
     ats_domains = (
         "boards.greenhouse.io", "greenhouse.io",
@@ -110,7 +107,7 @@ def extract_best_apply_url(raw_job: Dict[str, Any]) -> Optional[str]:
             if isinstance(opt, dict) and opt.get("is_direct") is True:
                 link = opt.get("apply_link")
                 if is_valid_http(link):
-                    return str(link).strip()
+                    return str(link).strip(), True
 
         # Priority 2: Known ATS platforms in apply_options
         for opt in apply_options:
@@ -119,43 +116,47 @@ def extract_best_apply_url(raw_job: Dict[str, Any]) -> Optional[str]:
                 if is_valid_http(link):
                     link_str = str(link).strip().lower()
                     if any(ats in link_str for ats in ats_domains):
-                        return str(link).strip()
+                        return str(link).strip(), True
 
-        # Priority 3: Specific job links in apply_options (not generic homepages)
+    # Priority 3: job_apply_is_direct flag
+    job_apply_link = raw_job.get("job_apply_link")
+    if raw_job.get("job_apply_is_direct") is True and is_valid_http(job_apply_link):
+        return str(job_apply_link).strip(), True
+
+    # Priority 4: Specific job links in apply_options (not generic homepages)
+    if isinstance(apply_options, list):
         for opt in apply_options:
             if isinstance(opt, dict):
                 link = opt.get("apply_link")
                 if is_valid_http(link) and not is_generic_root(str(link).strip()):
                     link_str = str(link).strip()
                     if "google.com/search" not in link_str.lower():
-                        return link_str
+                        return link_str, False
 
-    # Priority 4: job_apply_link
-    job_apply_link = raw_job.get("job_apply_link")
+    # Priority 5: job_apply_link
     if is_valid_http(job_apply_link) and not is_generic_root(str(job_apply_link).strip()):
-        return str(job_apply_link).strip()
+        return str(job_apply_link).strip(), False
 
-    # Priority 5: Fallback candidate fields
+    # Priority 6: Fallback candidate fields
     for field in ["apply_link", "url", "link"]:
         candidate = raw_job.get(field)
         if is_valid_http(candidate) and not is_generic_root(str(candidate).strip()):
-            return str(candidate).strip()
+            return str(candidate).strip(), False
 
-    # Priority 6: If job_apply_link exists even if minimal
     if is_valid_http(job_apply_link):
-        return str(job_apply_link).strip()
+        return str(job_apply_link).strip(), False
 
     if isinstance(apply_options, list):
         for opt in apply_options:
             if isinstance(opt, dict) and is_valid_http(opt.get("apply_link")):
-                return str(opt.get("apply_link")).strip()
+                return str(opt.get("apply_link")).strip(), False
 
-    # Last resort fallback: google link only if nothing else exists
+    # Last resort fallback: google link
     google_link = raw_job.get("job_google_link")
     if is_valid_http(google_link):
-        return str(google_link).strip()
+        return str(google_link).strip(), False
 
-    return None
+    return None, False
 
 def normalize_rapidapi_job(raw_job: Dict[str, Any]) -> RapidAPIJob:
     """Maps diverse RapidAPI job provider formats (e.g. JSearch, Job Search API) to the unified schema.
@@ -203,7 +204,7 @@ def normalize_rapidapi_job(raw_job: Dict[str, Any]) -> RapidAPIJob:
     ).strip()
 
     # Verified application link (prioritizes direct job posting, never hallucinated)
-    clean_url = extract_best_apply_url(raw_job)
+    clean_url, is_direct = extract_best_apply_url(raw_job)
 
     # Source Platform
     source = _detect_source_platform(raw_job)
@@ -273,6 +274,7 @@ def normalize_rapidapi_job(raw_job: Dict[str, Any]) -> RapidAPIJob:
         salary=salary,
         source=source,
         source_url=clean_url,
+        is_direct=is_direct,
         posted_at=posted_at,
         fetched_at=now_iso,
         is_fresh=True,
@@ -374,8 +376,8 @@ def search_live_jobs(
     }
 
     try:
-        logger.info(f"Calling RapidAPI job search at {host} for '{full_query}'")
-        resp = requests.get(endpoint, headers=headers, params=params, timeout=18.0)
+        rapid_timeout = float(os.getenv("RAPIDAPI_TIMEOUT", "20.0"))
+        resp = requests.get(endpoint, headers=headers, params=params, timeout=rapid_timeout)
         
         if resp.status_code == 429:
             logger.warning("RapidAPI rate limit exceeded (HTTP 429). Falling back gracefully.")
@@ -407,7 +409,7 @@ def search_live_jobs(
         logger.warning(f"RapidAPI job retrieval failed: {e}. Using fallback.")
         return []
 
-def to_hireagent_job_dict(job: RapidAPIJob, auto_id: int = 0) -> Dict[str, Any]:
+def to_hireagent_job_dict(job: RapidAPIJob, auto_id: int = 0, role_category: Optional[str] = None) -> Dict[str, Any]:
     """Converts a normalized RapidAPIJob into the dictionary format expected by HireAgent's matching engine.
     Preserves original external job ID, canonical job URL, and direct application link.
     """
@@ -421,22 +423,31 @@ def to_hireagent_job_dict(job: RapidAPIJob, auto_id: int = 0) -> Dict[str, Any]:
     else:
         stable_id = (abs(hash(job.external_job_id)) % 900000) + 100000
 
+    has_url = bool(job.source_url and str(job.source_url).strip().startswith(("http://", "https://")) and job.source_url != "Application link unavailable")
+    app_url = job.source_url if has_url else "Application link unavailable"
+
     return {
         "id": stable_id,
         "job_id": job.external_job_id,
         "external_job_id": job.external_job_id,
         "job_title": job.title,
+        "title": job.title,
         "company": job.company,
         "required_skills": skills_str,
         "experience_level": job.experience,
-        "job_role": job.title,
+        "job_role": role_category or job.title,
+        "role_category": role_category or job.title,
         "description": job.description,
         "canonical_job_url": job.source_url,
-        "application_url": job.source_url or "Application link unavailable",
+        "application_url": app_url,
+        "apply_url": app_url,
         "source": job.source,
         "source_type": job.source_type,
         "location": job.location,
-        "posted_at": job.posted_at or ""
+        "posted_at": job.posted_at or "",
+        "is_available": has_url,
+        "is_direct": getattr(job, "is_direct", True),
+        "url_status": "active" if has_url else "unavailable"
     }
 
 def find_cached_rapidapi_job(job_id: str) -> Optional[RapidAPIJob]:

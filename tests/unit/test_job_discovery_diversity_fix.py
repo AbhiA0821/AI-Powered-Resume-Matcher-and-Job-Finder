@@ -24,7 +24,7 @@ def test_apply_url_priority_direct_ats():
             {"publisher": "Greenhouse", "apply_link": "https://boards.greenhouse.io/innocorp/jobs/567890", "is_direct": True}
         ]
     }
-    best_url = extract_best_apply_url(raw_job)
+    best_url, _ = extract_best_apply_url(raw_job)
     assert best_url == "https://boards.greenhouse.io/innocorp/jobs/567890"
 
 def test_apply_url_direct_posting_over_generic_homepage():
@@ -38,7 +38,7 @@ def test_apply_url_direct_posting_over_generic_homepage():
             {"publisher": "Lever", "apply_link": "https://jobs.lever.co/startuplab/ai-engineer-101", "is_direct": False}
         ]
     }
-    best_url = extract_best_apply_url(raw_job)
+    best_url, _ = extract_best_apply_url(raw_job)
     assert best_url == "https://jobs.lever.co/startuplab/ai-engineer-101"
 
 def test_job_id_consistency_across_layers():

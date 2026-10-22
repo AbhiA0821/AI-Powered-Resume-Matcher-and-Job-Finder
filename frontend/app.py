@@ -453,19 +453,25 @@ def jobs():
         raw_jobs = jobs_data.get("jobs", []) if jobs_data else []
         for j in raw_jobs:
             req_skills = [s.strip() for s in (j.get("required_skills") or "").split(",") if s.strip()]
+            app_url = j.get("application_url") or j.get("canonical_job_url") or j.get("apply_url")
+            has_valid_url = bool(app_url and str(app_url).strip().startswith(("http://", "https://")) and app_url != "Application link unavailable")
+            is_avail = bool(j.get("is_available", has_valid_url))
             recommendations.append({
-                "job_id": str(j.get("id")),
+                "job_id": str(j.get("job_id") or j.get("external_job_id") or j.get("id")),
                 "job_title": j.get("job_title", "Position"),
                 "company": j.get("company", "Company"),
                 "location": j.get("location", "India"),
                 "employment_type": j.get("employment_type", "Full-time"),
                 "posted_at": j.get("posted_at"),
-                "match_percentage": 50.0,
-                "matched_skills": req_skills[:3],
-                "missing_skills": req_skills[3:6],
-                "source": "Catalog",
-                "source_type": "local",
-                "application_url": j.get("application_url", "Application link unavailable")
+                "match_percentage": float(j.get("match_percentage", 50.0)),
+                "matched_skills": j.get("matched_skills") or req_skills[:3],
+                "missing_skills": j.get("missing_skills") or req_skills[3:6],
+                "source": j.get("source") or "Job Search",
+                "source_type": j.get("source_type") or "live_api",
+                "application_url": app_url if is_avail else "Application link unavailable",
+                "apply_url": app_url if is_avail else "Application link unavailable",
+                "is_available": is_avail,
+                "is_direct": bool(j.get("is_direct", True))
             })
     else:
         # Hybrid matching workflow
@@ -474,9 +480,35 @@ def jobs():
             session.clear()
             flash("Your session has expired. Please sign in again.", "warning")
             return redirect(url_for("login"))
-        if rec_data:
+        if rec_data and rec_data.get("recommendations"):
             recommendations = rec_data.get("recommendations", [])
             target_role = rec_data.get("target_role", "")
+        else:
+            # Fallback to catalog / featured jobs if no resume is uploaded yet
+            jobs_data, _ = api_client.get_jobs(token, limit=10)
+            raw_jobs = jobs_data.get("jobs", []) if jobs_data else []
+            for j in raw_jobs:
+                req_skills = [s.strip() for s in (j.get("required_skills") or "").split(",") if s.strip()]
+                app_url = j.get("application_url") or j.get("canonical_job_url") or j.get("apply_url")
+                has_valid_url = bool(app_url and str(app_url).strip().startswith(("http://", "https://")) and app_url != "Application link unavailable")
+                is_avail = bool(j.get("is_available", has_valid_url))
+                recommendations.append({
+                    "job_id": str(j.get("job_id") or j.get("external_job_id") or j.get("id")),
+                    "job_title": j.get("job_title", "Position"),
+                    "company": j.get("company", "Company"),
+                    "location": j.get("location", "India"),
+                    "employment_type": j.get("employment_type", "Full-time"),
+                    "posted_at": j.get("posted_at"),
+                    "match_percentage": float(j.get("match_percentage", 50.0)),
+                    "matched_skills": j.get("matched_skills") or req_skills[:3],
+                    "missing_skills": j.get("missing_skills") or req_skills[3:6],
+                    "source": j.get("source") or "Job Search",
+                    "source_type": j.get("source_type") or "live_api",
+                    "application_url": app_url if is_avail else "Application link unavailable",
+                    "apply_url": app_url if is_avail else "Application link unavailable",
+                    "is_available": is_avail,
+                    "is_direct": bool(j.get("is_direct", True))
+                })
 
     return render_template(
         "jobs.html",
@@ -607,4 +639,6 @@ def assistant_chat_proxy():
     return jsonify(data)
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    # Use stat-based reloader instead of watchdog to prevent Windows API filesystem events
+    # inside site-packages (e.g. torch, transformers) from triggering repeated restarts.
+    app.run(host="127.0.0.1", port=5000, debug=True, reloader_type="stat")

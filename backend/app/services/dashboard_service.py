@@ -8,6 +8,7 @@ Adheres strictly to:
 - Invalidation on new resume upload or re-analysis
 """
 
+import os
 import time
 import logging
 from datetime import datetime, timezone
@@ -18,7 +19,7 @@ from app.models.user import User
 from app.models.resume import Resume
 from app.models.profile import UserProfile
 from app.services.profile import get_or_create_user_profile
-from app.services.skill_service import extract_skills, detect_candidate_role, parse_job_required_skills, normalize_skill
+from app.services.skill_service import extract_skills, detect_candidate_role, discover_relevant_roles, parse_job_required_skills, normalize_skill
 from app.services.jobs import get_jobs_from_db
 from app.services.matching_service import match_and_rank_jobs
 from app.schemas.dashboard import (
@@ -92,6 +93,11 @@ def run_user_pipeline_sync(
     Uses local SQLite catalog and local hybrid matcher.
     Zero live JSearch calls.
     """
+    t_pipeline_start = time.time()
+    t_retrieval = 0.0
+    t_match = 0.0
+    t_val = 0.0
+    t_rag = 0.0
     state = get_user_state(user_id)
     state["is_processing"] = True
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -119,13 +125,22 @@ def run_user_pipeline_sync(
             return
         set_pipeline_stage(user_id, "Resume Parsed", "completed", f"{word_count} words extracted successfully")
 
-        # 3. Skills Extracted
+        # 3. Skills Extracted & Multi-Role Discovery
         extracted_skills = extract_skills(text)
-        detected_role = target_role_override or detect_candidate_role(extracted_skills, text)
+        primary_detected = target_role_override or detect_candidate_role(extracted_skills, text)
+        discovered_roles = discover_relevant_roles(
+            resume_skills=extracted_skills,
+            extracted_text=text,
+            target_role=target_role_override or primary_detected,
+            max_roles=3
+        )
+        detected_role = discovered_roles[0] if discovered_roles else primary_detected
+
         if not extracted_skills:
             set_pipeline_stage(user_id, "Skills Extracted", "needs_attention", "No recognized technical skills found in resume")
         else:
-            set_pipeline_stage(user_id, "Skills Extracted", "completed", f"{len(extracted_skills)} technical skills identified")
+            role_tracks_str = ", ".join(discovered_roles)
+            set_pipeline_stage(user_id, "Skills Extracted", "completed", f"{len(extracted_skills)} technical skills identified ({len(discovered_roles)} role tracks: {role_tracks_str})")
 
         # Update user profile in DB with detected target role if empty
         profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
@@ -134,6 +149,7 @@ def run_user_pipeline_sync(
             db.commit()
 
         # 4. Jobs Retrieved (Multi-Source: JSearch RapidAPI + Qdrant Cloud + SQLite Catalog)
+        t_r_start = time.time()
         set_pipeline_stage(user_id, "Jobs Retrieved", "processing", "Discovering matching positions across live sources & catalog...")
         try:
             if os.environ.get("PYTEST_CURRENT_TEST") and os.environ.get("HIREAGENT_LIVE_TESTS", "0") != "1":
@@ -145,6 +161,7 @@ def run_user_pipeline_sync(
                 "resume_text": text,
                 "extracted_skills": extracted_skills,
                 "target_role": detected_role,
+                "relevant_roles": discovered_roles,
                 "candidate_jobs": [],
                 "ranked_jobs": [],
                 "top_k": 10,
@@ -160,6 +177,7 @@ def run_user_pipeline_sync(
             jobs = catalog_result.get("jobs", [])
             total_in_db = catalog_result.get("total", len(jobs))
             source_label = "local"
+        t_retrieval = time.time() - t_r_start
 
         # Prioritize jobs matching optional location or company preferences if provided
         if location_preference and location_preference.strip().lower() not in ["any", "all", ""]:
@@ -179,18 +197,23 @@ def run_user_pipeline_sync(
         set_pipeline_stage(user_id, "Jobs Retrieved", "completed", f"{len(jobs)} active positions retrieved across sources")
 
         # 5. Jobs Matched
+        t_m_start = time.time()
         set_pipeline_stage(user_id, "Jobs Matched", "processing", "Computing hybrid match scores...")
         min_threshold = profile.min_match_score if profile else 65.0
         ranked_jobs = match_and_rank_jobs(
             resume_text=text,
             jobs=jobs,
             target_role=detected_role,
+            relevant_roles=discovered_roles,
             top_k=10
         )
+        t_match = time.time() - t_m_start
 
         # Validate URLs of top matches so users never encounter dead pages
+        t_v_start = time.time()
         from app.services.url_validator import validate_jobs_batch
         ranked_jobs = validate_jobs_batch(ranked_jobs, max_to_validate=10)
+        t_val = time.time() - t_v_start
 
         matches_above_threshold = [j for j in ranked_jobs if j.get("match_percentage", 0) >= min_threshold]
         # Critical: make real hybrid-ranked jobs available immediately (zero wait for external LLMs)
@@ -212,6 +235,7 @@ def run_user_pipeline_sync(
             set_pipeline_stage(user_id, "Jobs Matched", "completed", "0 matching roles found for current skills")
 
         # Grounded RAG enrichment for top matches (enriches presentation without delaying initial job display)
+        t_rag_start = time.time()
         try:
             from app.workflows.hireagent_graph import rag_enrichment_node
             rag_res = rag_enrichment_node({
@@ -223,6 +247,7 @@ def run_user_pipeline_sync(
             state["matches"] = enriched_jobs
         except Exception as e:
             logger.debug(f"RAG enrichment fallback: {e}")
+        t_rag = time.time() - t_rag_start
 
         # 6. Skill Gaps Identified
         set_pipeline_stage(user_id, "Skill Gaps Identified", "processing", "Analyzing missing skill frequencies...")
@@ -253,6 +278,12 @@ def run_user_pipeline_sync(
 
         # 8. AI Assistant Available
         set_pipeline_stage(user_id, "AI Assistant Available", "completed", "Interactive career mentor ready")
+
+        t_total = time.time() - t_pipeline_start
+        logger.info(
+            f"[TIMING] User {user_id} pipeline finished in {t_total:.2f}s "
+            f"(Retrieval: {t_retrieval:.2f}s, Match: {t_match:.2f}s, URL Val: {t_val:.2f}s, RAG: {t_rag:.2f}s)"
+        )
 
     except Exception as e:
         logger.exception(f"Pipeline execution error for user {user_id}: {e}")
@@ -370,6 +401,7 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
             canonical_job_url=m.get("canonical_job_url") or clean_apply,
             source=m.get("source") or "Catalog",
             is_available=bool(is_avail),
+            is_direct=bool(m.get("is_direct", True)),
             url_status=m.get("url_status") or ("active" if is_avail else "unavailable")
         ))
 

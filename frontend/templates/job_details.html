@@ -40,9 +40,14 @@
                 </span>
                 {% endif %}
 
-                {% if job.is_available and job.application_url and job.application_url.startswith(('http://', 'https://')) and job.application_url != "Application link unavailable" %}
-                <a href="{{ job.application_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ha-primary px-4 py-2 d-inline-flex align-items-center gap-2">
-                    <span>Apply Now →</span>
+                {% set job_link = job.application_url or job.apply_url %}
+                {% if job.is_available and job_link and job_link.startswith(('http://', 'https://')) and job_link != "Application link unavailable" %}
+                <a href="{{ job_link }}" target="_blank" rel="noopener noreferrer" class="btn btn-ha-primary px-4 py-2 d-inline-flex align-items-center gap-2">
+                    {% if job.is_direct is defined and not job.is_direct %}
+                    <span>View Job →</span>
+                    {% else %}
+                    <span>Apply for this Position →</span>
+                    {% endif %}
                 </a>
                 {% else %}
                 <div class="d-flex flex-column align-items-md-end gap-1">
@@ -115,8 +120,9 @@
         </div>
 
         <div class="pt-4 mt-4 border-top border-secondary border-opacity-25">
-            {% if job.is_available and job.application_url and job.application_url.startswith(('http://', 'https://')) and job.application_url != "Application link unavailable" %}
-            <a href="{{ job.application_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-ha-primary px-4 py-2 d-inline-flex align-items-center gap-2">
+            {% set job_link = job.application_url or job.apply_url %}
+            {% if job.is_available and job_link and job_link.startswith(('http://', 'https://')) and job_link != "Application link unavailable" %}
+            <a href="{{ job_link }}" target="_blank" rel="noopener noreferrer" class="btn btn-ha-primary px-4 py-2 d-inline-flex align-items-center gap-2">
                 <span>Apply Now →</span>
             </a>
             {% else %}
