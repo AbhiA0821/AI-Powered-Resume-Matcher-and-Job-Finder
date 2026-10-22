@@ -11,8 +11,9 @@ Adheres strictly to:
 import os
 import time
 import logging
+import threading
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Set
 from sqlalchemy.orm import Session
 
 from app.models.user import User
@@ -41,9 +42,11 @@ logger = logging.getLogger("hireagent.dashboard")
 # Note: For production multi-worker setups, this would be backed by Redis or an idempotent DB table.
 # As documented for single-process Waitress/Uvicorn, in-memory state provides zero-latency isolation.
 _USER_DASHBOARD_STATE: Dict[int, Dict[str, Any]] = {}
+_ACTIVE_PIPELINE_USERS: Set[int] = set()
+_PIPELINE_LOCK = threading.Lock()
 
-# Assembled overview cache: keyed by (user_id, resume_id, resume_filename, resume_timestamp, pipeline_timestamp)
-_OVERVIEW_CACHE: Dict[Tuple[int, Optional[int], Optional[str], Optional[str], Optional[float]], Tuple[float, DashboardOverviewResponse]] = {}
+# Assembled overview cache: keyed by (user_id, resume_id, resume_filename, resume_timestamp, pipeline_timestamp, is_processing)
+_OVERVIEW_CACHE: Dict[Tuple[int, Optional[int], Optional[str], Optional[str], Optional[float], bool], Tuple[float, DashboardOverviewResponse]] = {}
 OVERVIEW_CACHE_TTL_SECONDS = 30.0
 
 def invalidate_user_dashboard(user_id: int):
@@ -61,6 +64,7 @@ def get_user_state(user_id: int) -> Dict[str, Any]:
     if user_id not in _USER_DASHBOARD_STATE:
         _USER_DASHBOARD_STATE[user_id] = {
             "is_processing": False,
+            "vector_indexed": False,
             "pipeline_stages": {},
             "matches": [],
             "discovery_stats": {},
@@ -295,6 +299,8 @@ def run_user_pipeline_sync(
         logger.exception(f"Pipeline execution error for user {user_id}: {e}")
         state["last_error"] = str(e)
     finally:
+        with _PIPELINE_LOCK:
+            _ACTIVE_PIPELINE_USERS.discard(user_id)
         state["is_processing"] = False
         state["last_pipeline_update"] = time.time()
         if close_db_on_exit and db is not None:
@@ -302,6 +308,8 @@ def run_user_pipeline_sync(
                 db.close()
             except Exception:
                 pass
+        import gc
+        gc.collect()
 
 
 def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOverviewResponse:
@@ -311,6 +319,7 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
     """
     user_id = current_user.id
     user_state = get_user_state(user_id)
+    is_currently_processing = bool(user_state.get("is_processing", False) or (user_id in _ACTIVE_PIPELINE_USERS))
 
     # 1. Fetch latest resume
     resume = db.query(Resume).filter(Resume.user_id == user_id).order_by(Resume.created_at.desc(), Resume.id.desc()).first()
@@ -320,7 +329,7 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
     pipeline_ts = user_state.get("last_pipeline_update", 0.0)
 
     # Check cache
-    cache_key = (user_id, resume_id, resume_fn, resume_ts, pipeline_ts)
+    cache_key = (user_id, resume_id, resume_fn, resume_ts, pipeline_ts, is_currently_processing)
     now = time.time()
     if cache_key in _OVERVIEW_CACHE:
         cached_time, cached_overview = _OVERVIEW_CACHE[cache_key]
@@ -333,7 +342,7 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
             exists=True,
             filename=resume.filename,
             uploaded_at=resume.created_at.isoformat() if resume.created_at else None,
-            status="ready" if resume.extracted_text else "needs_attention"
+            status="processing" if is_currently_processing else ("ready" if resume.extracted_text else "needs_attention")
         )
     else:
         resume_overview = ResumeOverview(
@@ -350,12 +359,21 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
     primary_role = profile.target_role or (detect_candidate_role(skills, resume_text) if skills else "Early Career Engineer")
     experience_tier = profile.experience_level or "Entry Level (0-2 years)"
 
+    v_status = "not_indexed"
+    if resume:
+        if user_state.get("vector_indexed"):
+            v_status = "indexed"
+        elif is_currently_processing:
+            v_status = "pending"
+        else:
+            v_status = "ready"
+
     profile_overview = ProfileOverview(
         primary_role=primary_role,
         experience_tier=experience_tier,
         skills=skills,
         skill_count=len(skills),
-        vector_index_status="indexed" if resume else "not_indexed"
+        vector_index_status=v_status
     )
 
     # --- Discovery & Matches ---
@@ -364,9 +382,10 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
     stored_stats = user_state.get("discovery_stats", {})
 
     # If no stored matches exist in memory yet, but user has an uploaded resume, match against catalog
-    if not stored_matches_raw and resume and resume.extracted_text:
+    # CRITICAL: Never trigger synchronous matching in overview if pipeline is already running in background!
+    if not stored_matches_raw and not is_currently_processing and resume and resume.extracted_text:
         try:
-            cat_result = get_jobs_from_db(limit=50)
+            cat_result = get_jobs_from_db(limit=25)
             cat_jobs = cat_result.get("jobs", [])
             if cat_jobs:
                 from app.services.skill_service import discover_relevant_roles
@@ -396,6 +415,9 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
                 stored_stats = user_state["discovery_stats"]
         except Exception as e_mat:
             logger.warning(f"Catalog fallback matching in overview assembly failed: {e_mat}")
+        finally:
+            import gc
+            gc.collect()
 
     # If no stored stats exist in memory yet, check if catalog exists to provide honest stats
     if not stored_stats:
@@ -625,7 +647,7 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
             ))
 
     response = DashboardOverviewResponse(
-        is_processing=user_state.get("is_processing", False),
+        is_processing=is_currently_processing,
         resume=resume_overview,
         profile=profile_overview,
         discovery=discovery_overview,

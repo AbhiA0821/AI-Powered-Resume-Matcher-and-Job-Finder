@@ -73,6 +73,8 @@ def save_and_create_resume(
     # Dispatch asynchronous post-upload pipeline (Qdrant Cloud vector indexing + multi-source matching)
     # Executing in background prevents HTTP gateway timeouts (502 Bad Gateway) while updating dashboard stages in real-time.
     import threading
+    import logging
+    logger = logging.getLogger("hireagent.resume")
 
     def _async_post_upload_worker(
         user_id: int,
@@ -82,30 +84,49 @@ def save_and_create_resume(
         loc_pref: Optional[str],
         comp_pref: Optional[str]
     ):
+        from app.services.dashboard_service import get_user_state, _ACTIVE_PIPELINE_USERS
         try:
-            from app.services.resume_chunking import index_user_resume_vectors
-            index_user_resume_vectors(user_id=user_id, resume_id=resume_id, extracted_text=text_content)
-        except Exception as e_q:
-            print(f"[Warning] Failed to index resume {resume_id} to Qdrant Cloud: {e_q}")
+            try:
+                from app.services.resume_chunking import index_user_resume_vectors
+                index_res = index_user_resume_vectors(user_id=user_id, resume_id=resume_id, extracted_text=text_content)
+                st = get_user_state(user_id)
+                st["vector_indexed"] = (index_res.get("status") == "success")
+            except Exception as e_q:
+                logger.warning(f"Failed to index resume {resume_id} to Qdrant Cloud: {e_q}")
+            finally:
+                import gc
+                gc.collect()
 
-        try:
-            from app.services.dashboard_service import run_user_pipeline_sync
-            run_user_pipeline_sync(
-                user_id=user_id,
-                target_role_override=role_override,
-                location_preference=loc_pref,
-                company_preference=comp_pref,
-                resume_id_override=resume_id
-            )
-        except Exception as e_p:
-            print(f"[Warning] Failed to execute dashboard pipeline on resume upload: {e_p}")
+            try:
+                from app.services.dashboard_service import run_user_pipeline_sync
+                run_user_pipeline_sync(
+                    user_id=user_id,
+                    target_role_override=role_override,
+                    location_preference=loc_pref,
+                    company_preference=comp_pref,
+                    resume_id_override=resume_id
+                )
+            except Exception as e_p:
+                logger.warning(f"Failed to execute dashboard pipeline on resume upload: {e_p}")
+        finally:
+            st = get_user_state(user_id)
+            st["is_processing"] = False
+            _ACTIVE_PIPELINE_USERS.discard(user_id)
+            import gc
+            gc.collect()
 
     try:
-        from app.services.dashboard_service import invalidate_user_dashboard, set_pipeline_stage
+        from app.services.dashboard_service import invalidate_user_dashboard, set_pipeline_stage, get_user_state, _ACTIVE_PIPELINE_USERS
         invalidate_user_dashboard(user.id)
+        # Mark user as actively processing immediately so polling requests never trigger concurrent duplicate inference
+        user_st = get_user_state(user.id)
+        user_st["is_processing"] = True
+        _ACTIVE_PIPELINE_USERS.add(user.id)
+
         set_pipeline_stage(user.id, "Resume Uploaded", "completed", f"{resume.filename} uploaded")
         words = len(extracted_text.split())
         set_pipeline_stage(user.id, "Resume Parsed", "completed", f"{words} words extracted successfully")
+        set_pipeline_stage(user.id, "Skills Extracted", "processing", "Extracting key technical competencies...")
 
         worker_thread = threading.Thread(
             target=_async_post_upload_worker,
@@ -114,7 +135,7 @@ def save_and_create_resume(
         )
         worker_thread.start()
     except Exception as e:
-        print(f"[Warning] Failed to dispatch async dashboard pipeline: {e}")
+        logger.warning(f"Failed to dispatch async dashboard pipeline: {e}")
 
     return resume
 

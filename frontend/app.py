@@ -183,6 +183,9 @@ def dashboard():
                 preferred_company=preferred_company
             )
             if res:
+                # Save uploaded resume in session so transient backend restarts preserve dashboard state
+                session['active_resume_filename'] = file.filename
+                session['has_uploaded_resume'] = True
                 if is_ajax:
                     return jsonify({"ok": True, "filename": file.filename})
                 flash(f"Resume '{file.filename}' analyzed and matched against jobs!", "success")
@@ -237,18 +240,32 @@ def dashboard():
     overview, err_over = api_client.get_dashboard_overview(token)
 
     # If the user endpoint returned an authentication error, session is stale
-    if is_auth_error(err_res):
+    if is_auth_error(err_res) or is_auth_error(err_over):
         session.clear()
         flash("Your session has expired. Please sign in again.", "warning")
         return redirect(url_for("login"))
 
+    # Update session resume state if backend confirmed resumes exist
+    if resumes and len(resumes) > 0:
+        first_res = resumes[0]
+        fn = first_res.get("filename") if isinstance(first_res, dict) else getattr(first_res, "filename", None)
+        if fn:
+            session['active_resume_filename'] = fn
+        session['has_uploaded_resume'] = True
+
     if not overview:
-        has_resume = bool(resumes)
+        is_transient_err = bool(err_over or err_res)
+        has_resume = bool(resumes) or bool(session.get('has_uploaded_resume'))
+        active_fn = (
+            (resumes[0].get("filename") if (resumes and isinstance(resumes[0], dict)) else getattr(resumes[0], "filename", None))
+            if resumes else session.get('active_resume_filename')
+        )
         overview = {
+            "is_processing": bool(is_transient_err and has_resume),
             "resume": {
                 "exists": has_resume,
-                "filename": resumes[0].get("filename") if (has_resume and isinstance(resumes[0], dict)) else getattr(resumes[0], "filename", None) if has_resume else None,
-                "status": "ready" if has_resume else "none"
+                "filename": active_fn,
+                "status": "processing" if is_transient_err else ("ready" if has_resume else "none")
             },
             "profile": {
                 "primary_role": profile.get("target_role") if isinstance(profile, dict) else getattr(profile, "target_role", None),
@@ -277,11 +294,11 @@ def dashboard():
                 "available": True
             },
             "pipeline": [
-                {"stage": "Resume Uploaded", "status": "completed" if has_resume else "not_started", "detail": "Resume uploaded" if has_resume else "No resume uploaded yet"},
+                {"stage": "Resume Uploaded", "status": "completed" if has_resume else "not_started", "detail": f"{active_fn} uploaded" if has_resume else "No resume uploaded yet"},
                 {"stage": "Resume Parsed", "status": "completed" if has_resume else "not_started", "detail": "Parsed" if has_resume else "Awaiting upload"},
                 {"stage": "Skills Extracted", "status": "completed" if (profile and profile.get("skills")) else "not_started", "detail": "Skills extracted" if (profile and profile.get("skills")) else "Awaiting parsing"},
-                {"stage": "Jobs Retrieved", "status": "not_started", "detail": "Awaiting matching"},
-                {"stage": "Jobs Matched", "status": "not_started", "detail": "Awaiting matching"},
+                {"stage": "Jobs Retrieved", "status": "processing" if (is_transient_err and has_resume) else "not_started", "detail": "Discovering positions..." if (is_transient_err and has_resume) else "Awaiting matching"},
+                {"stage": "Jobs Matched", "status": "processing" if (is_transient_err and has_resume) else "not_started", "detail": "Computing match scores..." if (is_transient_err and has_resume) else "Awaiting matching"},
                 {"stage": "Skill Gaps Identified", "status": "not_started", "detail": "Awaiting matches"},
                 {"stage": "Recommendations Generated", "status": "not_started", "detail": "Awaiting matches"},
                 {"stage": "AI Assistant Available", "status": "completed", "detail": "Online"}
@@ -306,7 +323,17 @@ def dashboard_poll():
         if is_auth_error(err):
             session.clear()
             return jsonify({"ok": False, "error": "Session expired", "redirect": url_for("login")}), 401
-        return jsonify({"error": err}), 400
+        # During transient backend restart or cold-start, indicate processing rather than hard error
+        has_resume = bool(session.get('has_uploaded_resume'))
+        return jsonify({
+            "is_processing": True if has_resume else False,
+            "resume": {
+                "exists": has_resume,
+                "filename": session.get('active_resume_filename'),
+                "status": "processing" if has_resume else "none"
+            },
+            "matches": []
+        })
     return jsonify(overview or {})
 
 @app.route("/dashboard/rerun", methods=["POST"])

@@ -187,7 +187,7 @@ def get_user_resumes(token: str) -> Tuple[Optional[List[Dict[str, Any]]], Option
         r = requests.get(
             f"{API_BASE_URL}/api/v1/resumes",
             headers=_get_headers(token),
-            timeout=5
+            timeout=15
         )
         return _safe_json_response(r, "Failed to fetch resumes")
     except requests.exceptions.Timeout:
@@ -201,7 +201,7 @@ def get_resume_detail(token: str, resume_id: int) -> Tuple[Optional[Dict[str, An
         r = requests.get(
             f"{API_BASE_URL}/api/v1/resumes/{resume_id}",
             headers=_get_headers(token),
-            timeout=5
+            timeout=15
         )
         return _safe_json_response(r, "Failed to fetch resume details")
     except requests.exceptions.Timeout:
@@ -215,7 +215,7 @@ def delete_resume(token: str, resume_id: int) -> Tuple[bool, Optional[str]]:
         r = requests.delete(
             f"{API_BASE_URL}/api/v1/resumes/{resume_id}",
             headers=_get_headers(token),
-            timeout=5
+            timeout=10
         )
         data, err = _safe_json_response(r, "Failed to delete resume")
         if err:
@@ -234,7 +234,7 @@ def get_user_profile(token: str) -> Tuple[Optional[Dict[str, Any]], Optional[str
         r = requests.get(
             f"{API_BASE_URL}/api/v1/profile",
             headers=_get_headers(token),
-            timeout=5
+            timeout=15
         )
         return _safe_json_response(r, "Failed to fetch user profile")
     except requests.exceptions.Timeout:

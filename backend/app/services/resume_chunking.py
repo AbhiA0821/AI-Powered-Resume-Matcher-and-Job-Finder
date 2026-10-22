@@ -76,49 +76,75 @@ def index_user_resume_vectors(user_id: int, resume_id: int, extracted_text: str)
     2. Deterministically chunks extracted_text.
     3. Embeds text chunks into 384D vectors using BAAI/bge-small-en-v1.5.
     4. Upserts points with payload containing user_id, resume_id, chunk_id, section, and text.
+    5. Releases temporary vectors and objects from memory immediately.
     """
+    import logging
+    logger = logging.getLogger("hireagent.chunking")
+
     if not extracted_text or not extracted_text.strip():
         raise ValueError("Cannot index resume with empty extracted text.")
         
-    # Step 1: Idempotent deletion of existing vectors for this resume
-    delete_resume_vectors(user_id=user_id, resume_id=resume_id)
-    
-    # Step 2: Deterministic chunking
-    chunks = chunk_text_deterministically(extracted_text)
-    if not chunks:
-        return {"resume_id": resume_id, "user_id": user_id, "indexed_chunks": 0}
+    try:
+        # Step 1: Idempotent deletion of existing vectors for this resume
+        delete_resume_vectors(user_id=user_id, resume_id=resume_id)
         
-    chunk_texts = [c["text"] for c in chunks]
-    
-    # Step 3: Embed text chunks
-    vectors = embed_texts(chunk_texts)
-    
-    # Step 4: Construct PointStruct instances with deterministic IDs
-    points: List[PointStruct] = []
-    for idx, chunk in enumerate(chunks):
-        point_id = generate_deterministic_point_id(user_id, resume_id, chunk["chunk_id"])
-        payload = {
+        # Step 2: Deterministic chunking
+        chunks = chunk_text_deterministically(extracted_text)
+        if not chunks:
+            return {"resume_id": resume_id, "user_id": user_id, "indexed_chunks": 0, "status": "skipped"}
+            
+        chunk_texts = [c["text"] for c in chunks]
+        
+        # Step 3: Embed text chunks
+        vectors = embed_texts(chunk_texts)
+        
+        # Step 4: Construct PointStruct instances with deterministic IDs
+        points: List[PointStruct] = []
+        for idx, chunk in enumerate(chunks):
+            point_id = generate_deterministic_point_id(user_id, resume_id, chunk["chunk_id"])
+            payload = {
+                "user_id": user_id,
+                "resume_id": resume_id,
+                "chunk_id": chunk["chunk_id"],
+                "section": chunk["section"],
+                "text": chunk["text"]
+            }
+            points.append(PointStruct(
+                id=point_id,
+                vector=vectors[idx],
+                payload=payload
+            ))
+            
+        # Step 5: Upsert to Qdrant Cloud
+        upsert_ok = upsert_resume_chunks(points)
+        status_label = "success" if upsert_ok else "skipped"
+        indexed_count = len(points) if upsert_ok else 0
+
+        # Release memory buffers immediately
+        del points
+        del vectors
+        del chunk_texts
+        del chunks
+        import gc
+        gc.collect()
+
+        return {
             "user_id": user_id,
             "resume_id": resume_id,
-            "chunk_id": chunk["chunk_id"],
-            "section": chunk["section"],
-            "text": chunk["text"]
+            "indexed_chunks": indexed_count,
+            "status": status_label
         }
-        points.append(PointStruct(
-            id=point_id,
-            vector=vectors[idx],
-            payload=payload
-        ))
-        
-    # Step 5: Upsert to Qdrant Cloud
-    upsert_resume_chunks(points)
-    
-    return {
-        "user_id": user_id,
-        "resume_id": resume_id,
-        "indexed_chunks": len(points),
-        "status": "success"
-    }
+    except Exception as e:
+        logger.warning(f"Vector indexing skipped for resume {resume_id}: {e}")
+        import gc
+        gc.collect()
+        return {
+            "user_id": user_id,
+            "resume_id": resume_id,
+            "indexed_chunks": 0,
+            "status": "failed",
+            "error": str(e)
+        }
 
 def search_resume_semantic(user_id: int, query: str, limit: int = 5, resume_id: Optional[int] = None) -> List[Dict[str, Any]]:
     """Performs semantic search over an authenticated user's indexed resume chunks."""
