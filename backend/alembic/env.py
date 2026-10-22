@@ -22,7 +22,8 @@ if config.config_file_name:
     fileConfig(config.config_file_name)
 
 # Set database URL dynamically from app settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+db_url = (settings.TURSO_DATABASE_URL or settings.DATABASE_URL) if is_turso_configured() else settings.DATABASE_URL
+config.set_main_option("sqlalchemy.url", db_url or "sqlite://")
 
 target_metadata = Base.metadata
 

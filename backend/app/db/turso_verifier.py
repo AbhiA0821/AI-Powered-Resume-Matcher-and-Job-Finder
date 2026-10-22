@@ -108,12 +108,16 @@ def verify_turso_connection(
         tables = [row[0] for row in cursor.fetchall() if not row[0].startswith("sqlite_")]
 
         latency_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        required_tables = {"users", "resumes", "user_profiles", "job_preferences"}
+        missing_tables = sorted(list(required_tables - set(tables)))
 
         return {
             "success": True,
             "message": "Successfully connected to Turso Cloud Database and executed read-only test query.",
             "url": sanitized_host,
             "tables": tables,
+            "required_tables_present": len(missing_tables) == 0,
+            "missing_tables": missing_tables,
             "latency_ms": latency_ms,
             "error": None,
         }
@@ -150,6 +154,10 @@ if __name__ == "__main__":
     if result["success"]:
         print(f"Latency:    {result['latency_ms']} ms")
         print(f"Tables:     {result['tables']}")
+        if result.get("required_tables_present"):
+            print("Schema:     All required application tables are present.")
+        else:
+            print(f"Schema:     Missing tables: {result.get('missing_tables')} (Can be provisioned safely with `python -m app.db.session`)")
     else:
         print(f"Error:      {result['error']}")
     print("=" * 60)

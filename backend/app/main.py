@@ -21,6 +21,17 @@ if settings.CORS_ORIGINS:
 
 @app.on_event("startup")
 def startup_event():
+    import logging
+    logger = logging.getLogger("hireagent.startup")
+
+    # Safely verify/initialize required database tables (non-destructive, idempotent)
+    try:
+        from app.db.session import init_db
+        init_db()
+        logger.info("Database schema verified/initialized successfully.")
+    except Exception as e:
+        logger.warning(f"Database schema initialization check notice: {e}")
+
     import threading
     def _warmup():
         try:

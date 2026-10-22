@@ -87,3 +87,17 @@ def get_db() -> Generator:
         yield db
     finally:
         db.close()
+
+
+def init_db() -> None:
+    """
+    Safely and idempotently creates missing database tables without altering or dropping
+    existing tables or data. Uses checkfirst=True to guarantee non-destructive execution.
+    """
+    from app.db import base  # noqa: F401
+    Base.metadata.create_all(bind=engine, checkfirst=True)
+
+
+if __name__ == "__main__":
+    init_db()
+    print("Database tables verified/created successfully.")
