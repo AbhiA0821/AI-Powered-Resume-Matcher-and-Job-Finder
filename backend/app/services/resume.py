@@ -84,8 +84,10 @@ def save_and_create_resume(
         loc_pref: Optional[str],
         comp_pref: Optional[str]
     ):
-        from app.services.dashboard_service import get_user_state, _ACTIVE_PIPELINE_USERS
+        from app.services.dashboard_service import get_user_state, _ACTIVE_PIPELINE_USERS, _PIPELINE_LOCK
+        from app.core.memory import log_memory_checkpoint
         try:
+            log_memory_checkpoint("resume_upload_worker:start", f"user={user_id} resume={resume_id}")
             try:
                 from app.services.resume_chunking import index_user_resume_vectors
                 index_res = index_user_resume_vectors(user_id=user_id, resume_id=resume_id, extracted_text=text_content)
@@ -111,17 +113,20 @@ def save_and_create_resume(
         finally:
             st = get_user_state(user_id)
             st["is_processing"] = False
-            _ACTIVE_PIPELINE_USERS.discard(user_id)
+            with _PIPELINE_LOCK:
+                _ACTIVE_PIPELINE_USERS.discard(user_id)
+            log_memory_checkpoint("resume_upload_worker:complete", f"user={user_id} resume={resume_id}")
             import gc
             gc.collect()
 
     try:
-        from app.services.dashboard_service import invalidate_user_dashboard, set_pipeline_stage, get_user_state, _ACTIVE_PIPELINE_USERS
+        from app.services.dashboard_service import invalidate_user_dashboard, set_pipeline_stage, get_user_state, _ACTIVE_PIPELINE_USERS, _PIPELINE_LOCK
         invalidate_user_dashboard(user.id)
         # Mark user as actively processing immediately so polling requests never trigger concurrent duplicate inference
         user_st = get_user_state(user.id)
         user_st["is_processing"] = True
-        _ACTIVE_PIPELINE_USERS.add(user.id)
+        with _PIPELINE_LOCK:
+            _ACTIVE_PIPELINE_USERS.add(user.id)
 
         set_pipeline_stage(user.id, "Resume Uploaded", "completed", f"{resume.filename} uploaded")
         words = len(extracted_text.split())

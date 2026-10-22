@@ -86,6 +86,15 @@ class Settings(BaseSettings):
     # Hugging Face Configuration (Model Download & Verification)
     HF_TOKEN: Optional[str] = None
 
+    # Centralized Embedding Model Configuration
+    EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
+    EMBEDDING_DIMENSION: int = 384
+    FASTEMBED_CACHE_PATH: Optional[str] = os.path.join(ROOT_DIR, ".fastembed_cache")
+
+    # Qdrant Vector Collections
+    QDRANT_RESUMES_COLLECTION: str = "hireagent_resumes"
+    QDRANT_JOBS_COLLECTION: str = "hireagent_jobs"
+
     model_config = SettingsConfigDict(
         case_sensitive=True,
         env_file=ENV_FILE_PATH,

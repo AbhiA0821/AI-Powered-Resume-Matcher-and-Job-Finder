@@ -6,10 +6,10 @@ from qdrant_client.http import models
 from qdrant_client.http.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
 from app.core.config import settings
 
-RESUMES_COLLECTION = "hireagent_resumes"
-JOBS_COLLECTION = "hireagent_jobs"
-EMBEDDING_DIM = 384
-VECTOR_DIMENSION = 384
+RESUMES_COLLECTION = getattr(settings, "QDRANT_RESUMES_COLLECTION", "hireagent_resumes")
+JOBS_COLLECTION = getattr(settings, "QDRANT_JOBS_COLLECTION", "hireagent_jobs")
+EMBEDDING_DIM = getattr(settings, "EMBEDDING_DIMENSION", 384)
+VECTOR_DIMENSION = EMBEDDING_DIM
 
 _qdrant_client_instance: Optional[QdrantClient] = None
 
@@ -119,7 +119,7 @@ def ensure_collection(collection_name: str) -> bool:
             if actual_size != EMBEDDING_DIM:
                 raise ValueError(
                     f"Collection '{collection_name}' exists but has vector size {actual_size}, "
-                    f"expected {EMBEDDING_DIM} for BAAI/bge-small-en-v1.5."
+                    f"expected {EMBEDDING_DIM} for {settings.EMBEDDING_MODEL}."
                 )
             _ENSURED_COLLECTIONS.add(collection_name)
             return True
@@ -177,6 +177,9 @@ def upsert_resume_chunks(points: List[PointStruct]) -> bool:
             if not ensure_collection(RESUMES_COLLECTION):
                 return False
             client = get_qdrant_client()
+            for p in points:
+                if p.payload is not None and "embedding_model" not in p.payload:
+                    p.payload["embedding_model"] = settings.EMBEDDING_MODEL
             client.upsert(collection_name=RESUMES_COLLECTION, points=points)
             return True
         except Exception as e:
@@ -250,6 +253,9 @@ def upsert_job_vectors(points: List[PointStruct]) -> bool:
             if not ensure_collection(JOBS_COLLECTION):
                 return False
             client = get_qdrant_client()
+            for p in points:
+                if p.payload is not None and "embedding_model" not in p.payload:
+                    p.payload["embedding_model"] = settings.EMBEDDING_MODEL
             client.upsert(collection_name=JOBS_COLLECTION, points=points)
             return True
         except Exception as e:

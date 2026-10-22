@@ -37,4 +37,5 @@ data/*.bak
 data/*.db
 *.log
 .pytest_cache/
-scratch/
+scratch/
+.fastembed_cache/

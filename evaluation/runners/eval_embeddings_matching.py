@@ -1,7 +1,7 @@
 """
 Embedding and Hybrid Matching Evaluation Runner for HireAgent.
 Evaluates:
-1. BAAI/bge-small-en-v1.5 embedding quality:
+1. Embedding model quality (all-MiniLM-L6-v2):
    - Vector dimensions (384)
    - NaN / Infinite value checks
    - L2 unit normalization (|norm - 1.0| < 1e-3)
@@ -33,14 +33,14 @@ from evaluation.metrics.hybrid_metrics import (
     validate_embedding_vector,
     compute_ranking_fidelity
 )
-from app.services.embeddings import embed_text, embed_texts
+from app.services.embeddings import embed_text, embed_texts, MODEL_NAME
 from app.services.matching_service import match_and_rank_jobs
 
 
 
 def evaluate_bge_embeddings() -> Dict[str, Any]:
     """Tests embedding health, dimension, normalization, and semantic fidelity."""
-    print("\n--- 1. Evaluating BAAI/bge-small-en-v1.5 Embeddings ---")
+    print(f"\n--- 1. Evaluating {MODEL_NAME} Embeddings ---")
     
     # 1. Dimension & Normalization
     sample_text = "Python, PyTorch, FastAPI, machine learning algorithms and Docker containers"

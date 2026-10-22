@@ -10,12 +10,17 @@ from app.services.skill_service import (
     detect_candidate_role,
     normalize_skill
 )
+import threading
+from app.core.config import settings
+from app.core.memory import log_memory_checkpoint
 from app.services.embeddings import embed_text, embed_texts
 
 logger = logging.getLogger("hireagent.matching")
 
 # In-memory LRU-style cache for job embeddings to eliminate repeated transformer calls
+_JOB_EMBEDDINGS_MODEL: str = settings.EMBEDDING_MODEL
 _JOB_EMBEDDINGS_CACHE: Dict[str, List[float]] = {}
+_JOB_CACHE_LOCK = threading.Lock()
 MAX_JOB_CACHE_SIZE = 5000
 
 class HybridKNNMatcher:
@@ -210,6 +215,7 @@ def match_and_rank_jobs(
     if not jobs:
         return []
 
+    log_memory_checkpoint("matching:start", f"candidate_jobs={len(jobs)}")
     resume_skills = extract_skills(resume_text)
     detected_role = target_role or detect_candidate_role(resume_skills, resume_text)
     if not relevant_roles:
@@ -244,6 +250,12 @@ def match_and_rank_jobs(
     knn_matcher.fit(candidate_jobs)
 
     # 4. Resolve Job Embeddings with in-memory caching to eliminate repeated encodings
+    global _JOB_EMBEDDINGS_MODEL, _JOB_EMBEDDINGS_CACHE
+    with _JOB_CACHE_LOCK:
+        if _JOB_EMBEDDINGS_MODEL != settings.EMBEDDING_MODEL:
+            _JOB_EMBEDDINGS_CACHE.clear()
+            _JOB_EMBEDDINGS_MODEL = settings.EMBEDDING_MODEL
+
     job_summary_texts = [
         f"{job.get('job_title', 'Software Engineer')} at {job.get('company', 'Company')}. Role: {job.get('job_role', '')}. Skills: {job.get('required_skills', '')}. {(job.get('description') or '')[:300]}"
         for job in candidate_jobs
@@ -254,20 +266,22 @@ def match_and_rank_jobs(
         uncached_texts = []
         temp_embeddings: List[Optional[List[float]]] = [None] * len(job_summary_texts)
 
-        for i, txt in enumerate(job_summary_texts):
-            if txt in _JOB_EMBEDDINGS_CACHE:
-                temp_embeddings[i] = _JOB_EMBEDDINGS_CACHE[txt]
-            else:
-                uncached_indices.append(i)
-                uncached_texts.append(txt)
+        with _JOB_CACHE_LOCK:
+            for i, txt in enumerate(job_summary_texts):
+                if txt in _JOB_EMBEDDINGS_CACHE:
+                    temp_embeddings[i] = _JOB_EMBEDDINGS_CACHE[txt]
+                else:
+                    uncached_indices.append(i)
+                    uncached_texts.append(txt)
 
         if uncached_texts:
             try:
                 new_vectors = embed_texts(uncached_texts)
-                for pos, vec in zip(uncached_indices, new_vectors):
-                    temp_embeddings[pos] = vec
-                    if len(_JOB_EMBEDDINGS_CACHE) < MAX_JOB_CACHE_SIZE:
-                        _JOB_EMBEDDINGS_CACHE[job_summary_texts[pos]] = vec
+                with _JOB_CACHE_LOCK:
+                    for pos, vec in zip(uncached_indices, new_vectors):
+                        temp_embeddings[pos] = vec
+                        if len(_JOB_EMBEDDINGS_CACHE) < MAX_JOB_CACHE_SIZE:
+                            _JOB_EMBEDDINGS_CACHE[job_summary_texts[pos]] = vec
             except Exception as e:
                 logger.warning(f"Batch embedding failed for {len(uncached_texts)} jobs: {e}")
 
@@ -361,6 +375,7 @@ def match_and_rank_jobs(
     scored_jobs.sort(key=lambda x: (1 if x.get("is_available") else 0, x["match_percentage"]), reverse=True)
     result = apply_employer_diversity(scored_jobs, top_k=top_k, max_per_employer=2)
     elapsed = time.time() - t_start
+    log_memory_checkpoint("matching:complete", f"ranked={len(result)}")
     logger.info(f"[TIMING] match_and_rank_jobs: processed {len(jobs)} candidates (shortlist: {len(candidate_jobs)}) in {elapsed:.3f}s -> {len(result)} ranked")
     return result
 

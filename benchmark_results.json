@@ -1,0 +1,38 @@
+{
+  "BAAI/bge-small-en-v1.5": {
+    "model": "BAAI/bge-small-en-v1.5",
+    "rss_before_init_mb": 17.36,
+    "rss_after_init_mb": 174.83,
+    "model_load_time_s": 3.508,
+    "resume_emb_latency_ms": 924.24,
+    "rss_resume_peak_mb": 180.82,
+    "matching_latency_ms": 7234.11,
+    "rss_matching_peak_mb": 318.5,
+    "poll_latency_15_ms": 148.05,
+    "rss_poll_peak_mb": 336.88,
+    "retrieval_quality": {
+      "sim_strong_match": 0.8761,
+      "sim_moderate_match": 0.6755,
+      "sim_unrelated_match": 0.4942,
+      "discrimination_valid": true
+    }
+  },
+  "sentence-transformers/all-MiniLM-L6-v2": {
+    "model": "sentence-transformers/all-MiniLM-L6-v2",
+    "rss_before_init_mb": 17.2,
+    "rss_after_init_mb": 186.79,
+    "model_load_time_s": 3.163,
+    "resume_emb_latency_ms": 158.33,
+    "rss_resume_peak_mb": 192.25,
+    "matching_latency_ms": 2188.0,
+    "rss_matching_peak_mb": 342.63,
+    "poll_latency_15_ms": 222.81,
+    "rss_poll_peak_mb": 362.09,
+    "retrieval_quality": {
+      "sim_strong_match": 0.7579,
+      "sim_moderate_match": 0.2833,
+      "sim_unrelated_match": 0.087,
+      "discrimination_valid": true
+    }
+  }
+}

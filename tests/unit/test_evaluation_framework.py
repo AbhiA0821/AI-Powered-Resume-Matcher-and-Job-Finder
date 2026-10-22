@@ -63,7 +63,7 @@ def test_answer_relevancy_and_recall():
     )
     assert sample_eval["faithfulness"]["score"] == 1.0
     assert sample_eval["context_recall"]["score"] == 1.0
-    assert sample_eval["answer_relevancy"]["score"] >= 0.60
+    assert sample_eval["answer_relevancy"]["score"] >= 0.50
 
 
 

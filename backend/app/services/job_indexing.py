@@ -1,6 +1,8 @@
 import uuid
 from typing import List, Dict, Any, Optional
 from qdrant_client.http.models import PointStruct
+from app.core.config import settings
+from app.core.memory import log_memory_checkpoint
 from app.services.embeddings import embed_text, embed_texts
 from app.services.qdrant_service import (
     upsert_job_vectors,
@@ -69,13 +71,20 @@ def build_job_embedding_text(
         parts.append(f"Description: {description}")
     return ". ".join(parts)
 
-def index_all_jobs(jobs: List[Dict[str, Any]]) -> Dict[str, Any]:
+def index_all_jobs(jobs: List[Dict[str, Any]], batch_size: int = 32) -> Dict[str, Any]:
     """Indexes a list of job records into the hireagent_jobs Qdrant collection idempotently."""
     if not jobs:
         return {"indexed_count": 0, "status": "no jobs to index"}
         
+    log_memory_checkpoint("job_indexing:start", f"total_jobs={len(jobs)}")
     text_representations = [construct_job_text_representation(job) for job in jobs]
-    vectors = embed_texts(text_representations)
+    
+    # Process batch embeddings in bounded chunks to keep memory usage predictable
+    vectors: List[List[float]] = []
+    for i in range(0, len(text_representations), batch_size):
+        chunk = text_representations[i:i + batch_size]
+        chunk_vecs = embed_texts(chunk)
+        vectors.extend(chunk_vecs)
     
     points: List[PointStruct] = []
     for idx, job in enumerate(jobs):
@@ -94,7 +103,8 @@ def index_all_jobs(jobs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "source_type": job.get("source_type", "static_catalog"),
             "location": job.get("location", "India"),
             "posted_at": job.get("posted_at", ""),
-            "text": text_representations[idx]
+            "text": text_representations[idx],
+            "embedding_model": settings.EMBEDDING_MODEL
         }
         points.append(PointStruct(
             id=point_id,
@@ -103,6 +113,7 @@ def index_all_jobs(jobs: List[Dict[str, Any]]) -> Dict[str, Any]:
         ))
         
     upsert_job_vectors(points)
+    log_memory_checkpoint("job_indexing:complete", f"indexed_points={len(points)}")
     return {"indexed_count": len(points), "status": "success"}
 
 def index_live_jobs_in_qdrant(jobs: List[Any]) -> Dict[str, Any]:

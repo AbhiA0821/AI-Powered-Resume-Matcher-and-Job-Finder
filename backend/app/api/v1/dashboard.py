@@ -70,8 +70,11 @@ def rerun_analysis_endpoint(
         )
     else:
         # In production, dispatch asynchronously so endpoint returns immediately and client polls without timing out
+        from app.services.dashboard_service import _ACTIVE_PIPELINE_USERS, _PIPELINE_LOCK
         state = get_user_state(current_user.id)
         state["is_processing"] = True
+        with _PIPELINE_LOCK:
+            _ACTIVE_PIPELINE_USERS.add(current_user.id)
         import threading
         worker = threading.Thread(
             target=run_user_pipeline_sync,

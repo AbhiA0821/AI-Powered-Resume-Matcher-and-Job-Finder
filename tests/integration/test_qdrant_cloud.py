@@ -16,7 +16,7 @@ from app.services.job_sources.rapidapi_job_service import NormalizedJob
 from app.core.config import settings
 
 def test_qdrant_vector_dimension_is_384():
-    """Validates vector dimension is strictly 384 corresponding to BAAI/bge-small-en-v1.5."""
+    """Validates vector dimension is strictly 384 corresponding to sentence-transformers/all-MiniLM-L6-v2."""
     assert VECTOR_DIMENSION == 384
 
 def test_qdrant_client_initialization():

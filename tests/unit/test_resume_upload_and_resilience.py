@@ -15,11 +15,13 @@ from app.services.dashboard_service import (
     _OVERVIEW_CACHE,
     _ACTIVE_PIPELINE_USERS
 )
-from app.services.embeddings import get_embedding_model
-from app.services.qdrant_service import reset_qdrant_client, delete_resume_vectors, upsert_resume_chunks
+from app.core.config import settings
+from app.services.embeddings import get_embedding_model, embed_text, embed_texts, EMBEDDING_DIMENSION, MODEL_NAME
+from app.services.qdrant_service import reset_qdrant_client, delete_resume_vectors, upsert_resume_chunks, EMBEDDING_DIM, RESUMES_COLLECTION, JOBS_COLLECTION
 from app.services.resume_chunking import index_user_resume_vectors
 from app.services.matching_service import match_and_rank_jobs
 from app.services.jobs import get_jobs_from_db
+from app.services.job_indexing import build_job_embedding_text, construct_job_text_representation
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -192,3 +194,126 @@ def test_matching_with_genuine_catalog():
     assert "match_percentage" in top_job
     assert top_job["match_percentage"] > 0
     assert "matched_skills" in top_job
+
+
+def test_configured_model_identifier():
+    """Requirement 1: Verifies the configured model identifier is sentence-transformers/all-MiniLM-L6-v2."""
+    assert settings.EMBEDDING_MODEL == "sentence-transformers/all-MiniLM-L6-v2"
+    assert MODEL_NAME == "sentence-transformers/all-MiniLM-L6-v2"
+    assert EMBEDDING_DIMENSION == 384
+    assert EMBEDDING_DIM == 384
+
+
+def test_embedding_dimension_consistency():
+    """Requirement 3: Verifies dimension consistency (strictly 384), non-empty output, finite values, and unit L2 norm."""
+    test_inputs = [
+        "Python developer",
+        "Senior Cloud Architect with AWS, Kubernetes, Terraform, microservices and CI/CD pipelines",
+        "Short"
+    ]
+    for inp in test_inputs:
+        vec = embed_text(inp)
+        assert isinstance(vec, list)
+        assert len(vec) == 384
+        # Verify L2 unit norm
+        norm = sum(x * x for x in vec)
+        assert pytest.approx(norm, 0.01) == 1.0
+        # Verify all values are finite floats
+        for val in vec:
+            assert isinstance(val, float)
+            assert not (val != val)  # not NaN
+
+    # Batch consistency
+    batch_vecs = embed_texts(test_inputs)
+    assert len(batch_vecs) == len(test_inputs)
+    for v in batch_vecs:
+        assert len(v) == 384
+
+
+def test_resume_embedding_generation():
+    """Requirement 4: Verifies resume text embedding generation using configured model."""
+    sample_resume = (
+        "Alice Smith - Machine Learning Engineer\n"
+        "Expertise in Python, PyTorch, Transformers, ONNX Runtime, and FastAPI.\n"
+        "Designed vector retrieval and semantic search pipelines with Qdrant."
+    )
+    vec = embed_text(sample_resume)
+    assert isinstance(vec, list)
+    assert len(vec) == 384
+    assert any(abs(x) > 0.0 for x in vec)
+
+
+def test_job_description_embedding_generation():
+    """Requirement 5: Verifies job description embedding generation using configured model."""
+    job_dict = {
+        "id": 1,
+        "job_title": "Senior Machine Learning Engineer",
+        "company": "DeepTech Innovations",
+        "job_role": "Machine Learning Engineer",
+        "required_skills": "Python, PyTorch, FastAPI, ONNX, Docker",
+        "experience_level": "3-5 years",
+        "description": "Building scalable inference microservices using ONNX Runtime."
+    }
+    job_text = construct_job_text_representation(job_dict)
+    assert "Machine Learning Engineer" in job_text
+    vec = embed_text(job_text)
+    assert isinstance(vec, list)
+    assert len(vec) == 384
+
+
+def test_consistent_embedding_models_across_resume_and_jobs():
+    """Requirement 6: Verifies consistent embedding model and semantic discrimination across resume and job descriptions."""
+    resume_text = "Senior Python Backend Developer specialized in FastAPI, PostgreSQL, Docker, and REST APIs."
+    ml_job_text = "Senior Python Backend Developer with FastAPI, PostgreSQL, and scalable microservices."
+    unrelated_job_text = "Certified Public Accountant with GAAP, corporate tax filings, and ledger auditing."
+
+    r_vec = embed_text(resume_text)
+    j_relevant_vec = embed_text(ml_job_text)
+    j_unrelated_vec = embed_text(unrelated_job_text)
+
+    # Cosine similarities
+    sim_relevant = sum(a * b for a, b in zip(r_vec, j_relevant_vec))
+    sim_unrelated = sum(a * b for a, b in zip(r_vec, j_unrelated_vec))
+
+    # Relevant domain must have significantly higher cosine similarity than unrelated domain
+    assert sim_relevant > sim_unrelated, f"Expected relevant sim ({sim_relevant:.3f}) > unrelated sim ({sim_unrelated:.3f})"
+    assert sim_relevant > 0.60
+
+
+def test_qdrant_vector_compatibility_and_payload_stamping():
+    """Requirement 7: Verifies Qdrant vector compatibility, 384D config, and model payload tagging."""
+    from qdrant_client.http.models import PointStruct
+    from app.services.resume_chunking import generate_deterministic_point_id
+
+    point_id = generate_deterministic_point_id(user_id=1, resume_id=1, chunk_id="chunk_0")
+    dummy_vec = [0.05] * 384
+    p = PointStruct(
+        id=point_id,
+        vector=dummy_vec,
+        payload={"user_id": 1, "resume_id": 1, "text": "Test"}
+    )
+    assert len(p.vector) == EMBEDDING_DIM
+    assert EMBEDDING_DIM == 384
+
+    # Verify upsert stamping tags embedding_model
+    with patch("app.services.qdrant_service.ensure_collection", return_value=True), \
+         patch("app.services.qdrant_service.get_qdrant_client") as mock_get_client:
+        mock_client = MagicMock()
+        mock_get_client.return_value = mock_client
+        upsert_resume_chunks([p])
+        mock_client.upsert.assert_called_once()
+        called_points = mock_client.upsert.call_args[1]["points"]
+        assert called_points[0].payload.get("embedding_model") == "sentence-transformers/all-MiniLM-L6-v2"
+
+
+def test_embedding_model_singleton_thread_safety():
+    """Requirement 2: Verifies thread-safe singleton initialization with concurrent threads."""
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(get_embedding_model) for _ in range(8)]
+        models = [f.result() for f in futures]
+    
+    first_model = models[0]
+    for m in models[1:]:
+        assert m is first_model, "All concurrent threads must receive the identical singleton instance"
+

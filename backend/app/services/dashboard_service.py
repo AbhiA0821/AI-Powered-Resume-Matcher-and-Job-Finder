@@ -23,6 +23,7 @@ from app.services.profile import get_or_create_user_profile
 from app.services.skill_service import extract_skills, detect_candidate_role, discover_relevant_roles, parse_job_required_skills, normalize_skill
 from app.services.jobs import get_jobs_from_db
 from app.services.matching_service import match_and_rank_jobs
+from app.core.memory import log_memory_checkpoint
 from app.schemas.dashboard import (
     DashboardOverviewResponse,
     ResumeOverview,
@@ -102,6 +103,7 @@ def run_user_pipeline_sync(
     t_match = 0.0
     t_val = 0.0
     t_rag = 0.0
+    log_memory_checkpoint("pipeline:start", f"user={user_id}")
     state = get_user_state(user_id)
     state["is_processing"] = True
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -290,6 +292,7 @@ def run_user_pipeline_sync(
         set_pipeline_stage(user_id, "AI Assistant Available", "completed", "Interactive career mentor ready")
 
         t_total = time.time() - t_pipeline_start
+        log_memory_checkpoint("pipeline:complete", f"user={user_id} total_time={t_total:.2f}s")
         logger.info(
             f"[TIMING] User {user_id} pipeline finished in {t_total:.2f}s "
             f"(Retrieval: {t_retrieval:.2f}s, Match: {t_match:.2f}s, URL Val: {t_val:.2f}s, RAG: {t_rag:.2f}s)"
@@ -377,14 +380,20 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
     )
 
     # --- Discovery & Matches ---
-    # Read from stored user state
-    stored_matches_raw = user_state.get("matches", [])
-    stored_stats = user_state.get("discovery_stats", {})
+    # Read from stored user state with pipeline lock check to prevent concurrent race conditions
+    should_run_catalog_match = False
+    with _PIPELINE_LOCK:
+        stored_matches_raw = user_state.get("matches", [])
+        stored_stats = user_state.get("discovery_stats", {})
+        is_currently_processing = bool(user_state.get("is_processing", False) or (user_id in _ACTIVE_PIPELINE_USERS))
+        if not stored_matches_raw and not is_currently_processing and resume and resume.extracted_text:
+            _ACTIVE_PIPELINE_USERS.add(user_id)
+            user_state["is_processing"] = True
+            should_run_catalog_match = True
 
-    # If no stored matches exist in memory yet, but user has an uploaded resume, match against catalog
-    # CRITICAL: Never trigger synchronous matching in overview if pipeline is already running in background!
-    if not stored_matches_raw and not is_currently_processing and resume and resume.extracted_text:
+    if should_run_catalog_match:
         try:
+            log_memory_checkpoint("overview:catalog_match:start", f"user={user_id}")
             cat_result = get_jobs_from_db(limit=25)
             cat_jobs = cat_result.get("jobs", [])
             if cat_jobs:
@@ -413,9 +422,13 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
                     "min_score_threshold": min_thresh
                 }
                 stored_stats = user_state["discovery_stats"]
+            log_memory_checkpoint("overview:catalog_match:complete", f"user={user_id}")
         except Exception as e_mat:
             logger.warning(f"Catalog fallback matching in overview assembly failed: {e_mat}")
         finally:
+            with _PIPELINE_LOCK:
+                _ACTIVE_PIPELINE_USERS.discard(user_id)
+                user_state["is_processing"] = False
             import gc
             gc.collect()
 

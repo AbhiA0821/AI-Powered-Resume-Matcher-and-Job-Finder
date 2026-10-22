@@ -32,7 +32,7 @@ def test_resume_parser_empty_fallback():
     assert extract_resume_text("non_existent_file.xyz") == ""
 
 def test_resume_embeddings_generation():
-    """Verifies that BAAI/bge-small-en-v1.5 generates 384D normalized vectors."""
+    """Verifies that sentence-transformers/all-MiniLM-L6-v2 generates 384D normalized vectors."""
     vec = embed_text("Senior Full Stack Python Developer with FastAPI and Docker")
     assert isinstance(vec, list)
     assert len(vec) == EMBEDDING_DIMENSION

@@ -2,6 +2,8 @@ import uuid
 import re
 from typing import List, Dict, Any, Optional
 from qdrant_client.http.models import PointStruct
+from app.core.config import settings
+from app.core.memory import log_memory_checkpoint
 from app.services.embeddings import embed_texts
 from app.services.qdrant_service import (
     delete_resume_vectors,
@@ -74,8 +76,8 @@ def index_user_resume_vectors(user_id: int, resume_id: int, extracted_text: str)
     Flow:
     1. Idempotently removes previous points belonging to (user_id, resume_id).
     2. Deterministically chunks extracted_text.
-    3. Embeds text chunks into 384D vectors using BAAI/bge-small-en-v1.5.
-    4. Upserts points with payload containing user_id, resume_id, chunk_id, section, and text.
+    3. Embeds text chunks into 384D vectors using sentence-transformers/all-MiniLM-L6-v2.
+    4. Upserts points with payload containing user_id, resume_id, chunk_id, section, text, and embedding_model.
     5. Releases temporary vectors and objects from memory immediately.
     """
     import logging
@@ -85,6 +87,7 @@ def index_user_resume_vectors(user_id: int, resume_id: int, extracted_text: str)
         raise ValueError("Cannot index resume with empty extracted text.")
         
     try:
+        log_memory_checkpoint("resume_chunking:start", f"user={user_id} resume={resume_id}")
         # Step 1: Idempotent deletion of existing vectors for this resume
         delete_resume_vectors(user_id=user_id, resume_id=resume_id)
         
@@ -107,7 +110,8 @@ def index_user_resume_vectors(user_id: int, resume_id: int, extracted_text: str)
                 "resume_id": resume_id,
                 "chunk_id": chunk["chunk_id"],
                 "section": chunk["section"],
-                "text": chunk["text"]
+                "text": chunk["text"],
+                "embedding_model": settings.EMBEDDING_MODEL
             }
             points.append(PointStruct(
                 id=point_id,
@@ -119,6 +123,7 @@ def index_user_resume_vectors(user_id: int, resume_id: int, extracted_text: str)
         upsert_ok = upsert_resume_chunks(points)
         status_label = "success" if upsert_ok else "skipped"
         indexed_count = len(points) if upsert_ok else 0
+        log_memory_checkpoint("resume_chunking:complete", f"indexed_chunks={indexed_count}")
 
         # Release memory buffers immediately
         del points

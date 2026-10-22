@@ -112,7 +112,7 @@ def compute_answer_relevancy(
     if not generated_answer or not generated_answer.strip():
         return 0.0, {"details": "Empty generated answer"}
 
-    # Use BGE embeddings for semantic alignment
+    # Use centralized embeddings for semantic alignment
     q_emb = embed_text(question)
     a_emb = embed_text(generated_answer)
 
