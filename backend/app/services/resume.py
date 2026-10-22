@@ -70,27 +70,51 @@ def save_and_create_resume(
     db.commit()
     db.refresh(resume)
 
-    # Trigger Qdrant Cloud Vector Indexing (Phase 8)
-    try:
-        from app.services.resume_chunking import index_user_resume_vectors
-        index_user_resume_vectors(user_id=user.id, resume_id=resume.id, extracted_text=extracted_text)
-    except Exception as e:
-        # Non-blocking log if Qdrant Cloud is temporarily unavailable
-        print(f"[Warning] Failed to index resume {resume.id} to Qdrant Cloud: {e}")
+    # Dispatch asynchronous post-upload pipeline (Qdrant Cloud vector indexing + multi-source matching)
+    # Executing in background prevents HTTP gateway timeouts (502 Bad Gateway) while updating dashboard stages in real-time.
+    import threading
 
-    # Trigger End-to-End Analysis Pipeline for User Workspace (Phase 4)
+    def _async_post_upload_worker(
+        user_id: int,
+        resume_id: int,
+        text_content: str,
+        role_override: Optional[str],
+        loc_pref: Optional[str],
+        comp_pref: Optional[str]
+    ):
+        try:
+            from app.services.resume_chunking import index_user_resume_vectors
+            index_user_resume_vectors(user_id=user_id, resume_id=resume_id, extracted_text=text_content)
+        except Exception as e_q:
+            print(f"[Warning] Failed to index resume {resume_id} to Qdrant Cloud: {e_q}")
+
+        try:
+            from app.services.dashboard_service import run_user_pipeline_sync
+            run_user_pipeline_sync(
+                user_id=user_id,
+                target_role_override=role_override,
+                location_preference=loc_pref,
+                company_preference=comp_pref,
+                resume_id_override=resume_id
+            )
+        except Exception as e_p:
+            print(f"[Warning] Failed to execute dashboard pipeline on resume upload: {e_p}")
+
     try:
-        from app.services.dashboard_service import invalidate_user_dashboard, run_user_pipeline_sync
+        from app.services.dashboard_service import invalidate_user_dashboard, set_pipeline_stage
         invalidate_user_dashboard(user.id)
-        run_user_pipeline_sync(
-            user_id=user.id,
-            db=db,
-            target_role_override=target_role,
-            location_preference=preferred_location,
-            company_preference=preferred_company
+        set_pipeline_stage(user.id, "Resume Uploaded", "completed", f"{resume.filename} uploaded")
+        words = len(extracted_text.split())
+        set_pipeline_stage(user.id, "Resume Parsed", "completed", f"{words} words extracted successfully")
+
+        worker_thread = threading.Thread(
+            target=_async_post_upload_worker,
+            args=(user.id, resume.id, extracted_text, target_role, preferred_location, preferred_company),
+            daemon=True
         )
+        worker_thread.start()
     except Exception as e:
-        print(f"[Warning] Failed to execute dashboard pipeline on resume upload: {e}")
+        print(f"[Warning] Failed to dispatch async dashboard pipeline: {e}")
 
     return resume
 

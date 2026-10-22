@@ -19,6 +19,12 @@ def get_embedding_model():
     global _model_instance
     if _model_instance is None:
         try:
+            import os
+            os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+            hf_token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
+            if hf_token and not os.environ.get("HF_TOKEN"):
+                os.environ["HF_TOKEN"] = hf_token
+
             from fastembed import TextEmbedding
             # Initialize with 1 thread for predictable minimal memory footprint
             _model_instance = TextEmbedding(MODEL_NAME, threads=1)

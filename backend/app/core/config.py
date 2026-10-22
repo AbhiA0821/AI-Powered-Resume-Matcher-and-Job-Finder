@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     RAPIDAPI_HOST: str = "jsearch.p.rapidapi.com"
     RAPIDAPI_JOB_ENDPOINT: str = "https://jsearch.p.rapidapi.com/search"
 
+    # Hugging Face Configuration (Model Download & Verification)
+    HF_TOKEN: Optional[str] = None
+
     model_config = SettingsConfigDict(
         case_sensitive=True,
         env_file=ENV_FILE_PATH,

@@ -81,7 +81,7 @@ def set_pipeline_stage(user_id: int, stage_name: str, status: str, detail: str):
 
 def run_user_pipeline_sync(
     user_id: int,
-    db: Session,
+    db: Optional[Session] = None,
     target_role_override: Optional[str] = None,
     location_preference: Optional[str] = None,
     company_preference: Optional[str] = None,
@@ -101,8 +101,14 @@ def run_user_pipeline_sync(
     state = get_user_state(user_id)
     state["is_processing"] = True
     now_iso = datetime.now(timezone.utc).isoformat()
+    close_db_on_exit = False
 
     try:
+        if db is None:
+            from app.db.session import SessionLocal
+            db = SessionLocal()
+            close_db_on_exit = True
+
         # 1. Fetch latest or specified resume
         if resume_id_override:
             resume = db.query(Resume).filter(Resume.id == resume_id_override, Resume.user_id == user_id).first()
@@ -291,6 +297,11 @@ def run_user_pipeline_sync(
     finally:
         state["is_processing"] = False
         state["last_pipeline_update"] = time.time()
+        if close_db_on_exit and db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
 
 
 def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOverviewResponse:

@@ -60,6 +60,8 @@ services:
         value: "15"
       - key: FIREBASE_PROJECT_ID
         sync: false
+      - key: HF_TOKEN
+        sync: false
 
   # ============================================================================
   # HireAgent Frontend Web App (Flask)
@@ -70,7 +72,7 @@ services:
     region: oregon
     plan: free
     buildCommand: pip install -r frontend/requirements.txt
-    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 "frontend.app:app"
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --timeout 120 "frontend.app:app"
     healthCheckPath: /health
     autoDeploy: false
     envVars:

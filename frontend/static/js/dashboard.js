@@ -21,7 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let isSubmitting = false;
     let processingTimer = null;
     let overallTimeoutTimer = null;
-    const OVERALL_TIMEOUT_MS = 25000; // 25s client-side timeout
+    const OVERALL_TIMEOUT_MS = 60000; // 60s client-side timeout for pipeline completion
 
     function setButtonLoading(loading) {
         if (!btnFindMatches) return;
@@ -224,8 +224,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     if (res.ok) {
                         clearOverallTimeout();
-                        // Backend pipeline finished synchronously; refresh directly
-                        window.location.reload();
+                        // Poll until backend background pipeline finishes and reload automatically
+                        pollUntilFinished();
                     } else {
                         const data = await res.json().catch(() => ({}));
                         if (res.status === 401 || (data && data.redirect)) {
@@ -256,8 +256,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     if (res.ok) {
                         clearOverallTimeout();
-                        // Backend pipeline finished synchronously; refresh directly
-                        window.location.reload();
+                        // Poll until backend background pipeline finishes and reload automatically
+                        pollUntilFinished();
                     } else {
                         const data = await res.json().catch(() => ({}));
                         if (res.status === 401 || (data && data.redirect)) {
@@ -279,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Polling for processing completion (used if page opened while processing is in flight)
     let pollAttempts = 0;
-    const maxPollAttempts = 15;
+    const maxPollAttempts = 40;
 
     async function pollUntilFinished() {
         pollAttempts = 0;

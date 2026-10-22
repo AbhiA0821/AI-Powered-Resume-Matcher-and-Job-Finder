@@ -35,6 +35,7 @@ class RapidAPIJob(BaseModel):
 # Simple in-memory cache with TTL (15 minutes)
 _JOB_CACHE: Dict[str, Tuple[float, List[RapidAPIJob]]] = {}
 CACHE_TTL_SECONDS = 900  # 15 minutes
+_RATE_LIMIT_COOLDOWN_UNTIL: float = 0.0
 
 def _get_cache_key(query: str, location: str, source: Optional[str], page: int) -> str:
     q = (query or "").strip().lower()
@@ -342,6 +343,11 @@ def search_live_jobs(
             logger.info(f"Returning {len(cached_results)} cached RapidAPI jobs for query '{query}'")
             return cached_results
 
+    global _RATE_LIMIT_COOLDOWN_UNTIL
+    if time.time() < _RATE_LIMIT_COOLDOWN_UNTIL:
+        logger.info("RapidAPI rate limit cooldown active. Using fallback.")
+        return []
+
     # Check JSearch monthly quota tracking (200 requests/month limit)
     tracker = get_usage_tracker()
     allowed, usage_info, _ = tracker.acquire_request_slot()
@@ -376,10 +382,11 @@ def search_live_jobs(
     }
 
     try:
-        rapid_timeout = float(os.getenv("RAPIDAPI_TIMEOUT", "20.0"))
+        rapid_timeout = float(os.getenv("RAPIDAPI_TIMEOUT", "6.0"))
         resp = requests.get(endpoint, headers=headers, params=params, timeout=rapid_timeout)
         
         if resp.status_code == 429:
+            _RATE_LIMIT_COOLDOWN_UNTIL = time.time() + 60.0
             logger.warning("RapidAPI rate limit exceeded (HTTP 429). Falling back gracefully.")
             return []
         
