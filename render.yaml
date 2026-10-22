@@ -6,7 +6,7 @@ services:
     name: hireagent-backend
     env: python
     region: oregon
-    plan: standard
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn --app-dir backend app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
@@ -68,7 +68,7 @@ services:
     name: hireagent-frontend
     env: python
     region: oregon
-    plan: standard
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn --bind 0.0.0.0:$PORT "frontend.app:app"
     healthCheckPath: /health
