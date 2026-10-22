@@ -32,6 +32,13 @@ def startup_event():
     except Exception as e:
         logger.warning(f"Database schema initialization check notice: {e}")
 
+    try:
+        from app.services.jobs import _ensure_jobs_table_initialized
+        _ensure_jobs_table_initialized()
+        logger.info("Job catalog database initialized and seeded successfully.")
+    except Exception as e:
+        logger.warning(f"Job catalog initialization notice: {e}")
+
     # Database schema check completed without eager background model allocation to preserve Render Free 512MB RAM
 
 # Root level health endpoint

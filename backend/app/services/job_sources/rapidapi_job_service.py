@@ -382,7 +382,7 @@ def search_live_jobs(
     }
 
     try:
-        rapid_timeout = float(os.getenv("RAPIDAPI_TIMEOUT", "6.0"))
+        rapid_timeout = float(os.getenv("RAPIDAPI_TIMEOUT", "4.0"))
         resp = requests.get(endpoint, headers=headers, params=params, timeout=rapid_timeout)
         
         if resp.status_code == 429:

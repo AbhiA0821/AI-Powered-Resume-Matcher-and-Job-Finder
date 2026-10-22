@@ -363,7 +363,41 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
     stored_matches_raw = user_state.get("matches", [])
     stored_stats = user_state.get("discovery_stats", {})
 
-    # If no stored matches exist in memory yet, check if catalog exists to provide honest stats
+    # If no stored matches exist in memory yet, but user has an uploaded resume, match against catalog
+    if not stored_matches_raw and resume and resume.extracted_text:
+        try:
+            cat_result = get_jobs_from_db(limit=50)
+            cat_jobs = cat_result.get("jobs", [])
+            if cat_jobs:
+                from app.services.skill_service import discover_relevant_roles
+                rel_roles = discover_relevant_roles(skills, resume_text, target_role=primary_role, max_roles=3) if skills else [primary_role]
+                ranked_cat = match_and_rank_jobs(
+                    resume_text=resume_text,
+                    jobs=cat_jobs,
+                    target_role=primary_role,
+                    relevant_roles=rel_roles,
+                    top_k=10
+                )
+                from app.services.url_validator import validate_jobs_batch
+                ranked_cat = validate_jobs_batch(ranked_cat, max_to_validate=10)
+                user_state["matches"] = ranked_cat
+                stored_matches_raw = ranked_cat
+                min_thresh = profile.min_match_score if profile else 65.0
+                matches_above_threshold = [j for j in ranked_cat if j.get("match_percentage", 0) >= min_thresh]
+                user_state["discovery_stats"] = {
+                    "total_jobs_analyzed": cat_result.get("total", len(cat_jobs)),
+                    "jobs_retrieved": len(cat_jobs),
+                    "relevant_jobs": len(ranked_cat),
+                    "matched_jobs": len(matches_above_threshold),
+                    "source": "local",
+                    "last_updated": datetime.now(timezone.utc).isoformat(),
+                    "min_score_threshold": min_thresh
+                }
+                stored_stats = user_state["discovery_stats"]
+        except Exception as e_mat:
+            logger.warning(f"Catalog fallback matching in overview assembly failed: {e_mat}")
+
+    # If no stored stats exist in memory yet, check if catalog exists to provide honest stats
     if not stored_stats:
         cat_result = get_jobs_from_db(limit=10)
         total_jobs_in_cat = cat_result.get("total", 0)

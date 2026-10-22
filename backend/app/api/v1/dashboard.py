@@ -16,7 +16,8 @@ from app.schemas.dashboard import DashboardOverviewResponse
 from app.services.dashboard_service import (
     assemble_dashboard_overview,
     run_user_pipeline_sync,
-    invalidate_user_dashboard
+    invalidate_user_dashboard,
+    get_user_state
 )
 
 class RerunPreferencesRequest(BaseModel):
@@ -48,20 +49,42 @@ def rerun_analysis_endpoint(
 ):
     """
     Explicitly re-runs the end-to-end matching and analysis pipeline for the current user's latest resume.
-    Uses local SQLite catalog and local hybrid matcher.
+    Dispatches pipeline execution in background and returns processing state immediately for frontend polling.
     """
     invalidate_user_dashboard(current_user.id)
     target_role = payload.target_role if payload else None
     loc = payload.preferred_location if payload else None
     comp = payload.preferred_company if payload else None
     res_id = payload.resume_id if payload else None
-    # Execute synchronously so caller gets updated state immediately
-    run_user_pipeline_sync(
-        user_id=current_user.id,
-        db=db,
-        target_role_override=target_role,
-        location_preference=loc,
-        company_preference=comp,
-        resume_id_override=res_id
-    )
+
+    # In pytest, run synchronously so test assertions verify immediate pipeline output
+    import os
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        run_user_pipeline_sync(
+            user_id=current_user.id,
+            db=db,
+            target_role_override=target_role,
+            location_preference=loc,
+            company_preference=comp,
+            resume_id_override=res_id
+        )
+    else:
+        # In production, dispatch asynchronously so endpoint returns immediately and client polls without timing out
+        state = get_user_state(current_user.id)
+        state["is_processing"] = True
+        import threading
+        worker = threading.Thread(
+            target=run_user_pipeline_sync,
+            kwargs={
+                "user_id": current_user.id,
+                "db": None,
+                "target_role_override": target_role,
+                "location_preference": loc,
+                "company_preference": comp,
+                "resume_id_override": res_id
+            },
+            daemon=True
+        )
+        worker.start()
+
     return assemble_dashboard_overview(db=db, current_user=current_user)

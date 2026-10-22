@@ -33,11 +33,40 @@ def _get_headers(token: Optional[str] = None) -> Dict[str, str]:
         headers["Authorization"] = f"Bearer {token}"
     return headers
 
+def _safe_json_response(r: requests.Response, default_error: str) -> Tuple[Optional[Any], Optional[str]]:
+    """Safely extracts JSON response or user-friendly error message, preventing JSONDecodeError."""
+    try:
+        data = r.json()
+    except Exception:
+        # Non-JSON response (e.g. Render 502/504 gateway timeout, HTML error page, or empty body)
+        if 200 <= r.status_code < 300:
+            return None, "Received invalid response from server."
+        if r.status_code == 502:
+            return None, "Backend service is temporarily unavailable (502 Bad Gateway). Please try again shortly."
+        if r.status_code == 504:
+            return None, "Backend request timed out (504 Gateway Timeout). Please try again shortly."
+        if r.status_code == 500:
+            return None, "Internal server error. Please try again shortly."
+        return None, f"Server returned error HTTP {r.status_code}."
+
+    if 200 <= r.status_code < 300:
+        return data, None
+
+    if isinstance(data, dict):
+        err = data.get("detail") or data.get("error") or data.get("message") or default_error
+        return None, str(err)
+    return None, default_error
+
 def check_backend_health() -> bool:
     """Checks if the FastAPI backend is running and healthy."""
     try:
         r = requests.get(f"{API_BASE_URL}/health", timeout=3)
-        return r.status_code == 200 and r.json().get("status") == "ok"
+        if r.status_code == 200:
+            try:
+                return r.json().get("status") == "ok"
+            except Exception:
+                return False
+        return False
     except Exception:
         return False
 
@@ -46,7 +75,10 @@ def get_jsearch_quota() -> Dict[str, Any]:
     try:
         r = requests.get(f"{API_BASE_URL}/health", timeout=3)
         if r.status_code == 200:
-            return r.json().get("jsearch_quota", {})
+            try:
+                return r.json().get("jsearch_quota", {})
+            except Exception:
+                pass
     except Exception:
         pass
     return {}
@@ -61,9 +93,9 @@ def register_user(name: str, email: str, password: str) -> Tuple[Optional[Dict[s
             json={"name": name, "email": email, "password": password},
             timeout=5
         )
-        if r.status_code == 201:
-            return r.json(), None
-        return None, r.json().get("detail", "Registration failed")
+        return _safe_json_response(r, "Registration failed")
+    except requests.exceptions.Timeout:
+        return None, "Registration request timed out. Please try again."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -75,10 +107,12 @@ def login_user(email: str, password: str) -> Tuple[Optional[str], Optional[str]]
             json={"email": email, "password": password},
             timeout=5
         )
-        if r.status_code == 200:
-            token = r.json().get("access_token")
-            return token, None
-        return None, r.json().get("detail", "Invalid credentials")
+        data, err = _safe_json_response(r, "Invalid credentials")
+        if data and isinstance(data, dict):
+            return data.get("access_token"), None
+        return None, err or "Invalid credentials"
+    except requests.exceptions.Timeout:
+        return None, "Login request timed out. Please try again."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -90,10 +124,10 @@ def login_firebase_user(id_token: str) -> Tuple[Optional[str], Optional[str]]:
             json={"id_token": id_token},
             timeout=25
         )
-        if r.status_code == 200:
-            token = r.json().get("access_token")
-            return token, None
-        return None, r.json().get("detail", "Google Firebase authentication failed")
+        data, err = _safe_json_response(r, "Google Firebase authentication failed")
+        if data and isinstance(data, dict):
+            return data.get("access_token"), None
+        return None, err or "Google Firebase authentication failed"
     except requests.exceptions.Timeout:
         return None, "Backend authentication timed out. Please try again."
     except Exception as e:
@@ -107,9 +141,9 @@ def get_current_user(token: str) -> Tuple[Optional[Dict[str, Any]], Optional[str
             headers=_get_headers(token),
             timeout=5
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to fetch user details")
+        return _safe_json_response(r, "Failed to fetch user details")
+    except requests.exceptions.Timeout:
+        return None, "User details request timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -141,13 +175,7 @@ def upload_resume(
             data=data if data else None,
             timeout=60
         )
-        if r.status_code == 201:
-            return r.json(), None
-        try:
-            err_msg = r.json().get("detail", "Resume upload failed")
-        except Exception:
-            err_msg = r.text or f"HTTP {r.status_code}"
-        return None, err_msg
+        return _safe_json_response(r, "Resume upload failed")
     except requests.exceptions.Timeout:
         return None, "Job matching is taking longer than expected. Please try again."
     except Exception as e:
@@ -161,9 +189,9 @@ def get_user_resumes(token: str) -> Tuple[Optional[List[Dict[str, Any]]], Option
             headers=_get_headers(token),
             timeout=5
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to fetch resumes")
+        return _safe_json_response(r, "Failed to fetch resumes")
+    except requests.exceptions.Timeout:
+        return None, "Request timed out while fetching resumes."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -175,9 +203,9 @@ def get_resume_detail(token: str, resume_id: int) -> Tuple[Optional[Dict[str, An
             headers=_get_headers(token),
             timeout=5
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to fetch resume details")
+        return _safe_json_response(r, "Failed to fetch resume details")
+    except requests.exceptions.Timeout:
+        return None, "Request timed out while fetching resume details."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -189,9 +217,12 @@ def delete_resume(token: str, resume_id: int) -> Tuple[bool, Optional[str]]:
             headers=_get_headers(token),
             timeout=5
         )
-        if r.status_code == 200:
-            return True, None
-        return False, r.json().get("detail", "Failed to delete resume")
+        data, err = _safe_json_response(r, "Failed to delete resume")
+        if err:
+            return False, err
+        return True, None
+    except requests.exceptions.Timeout:
+        return False, "Delete request timed out."
     except Exception as e:
         return False, f"Connection error: {str(e)}"
 
@@ -205,9 +236,9 @@ def get_user_profile(token: str) -> Tuple[Optional[Dict[str, Any]], Optional[str
             headers=_get_headers(token),
             timeout=5
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to fetch user profile")
+        return _safe_json_response(r, "Failed to fetch user profile")
+    except requests.exceptions.Timeout:
+        return None, "Profile request timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -220,9 +251,9 @@ def update_user_profile(token: str, profile_data: Dict[str, Any]) -> Tuple[Optio
             json=profile_data,
             timeout=5
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to update profile")
+        return _safe_json_response(r, "Failed to update profile")
+    except requests.exceptions.Timeout:
+        return None, "Profile update request timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -236,9 +267,9 @@ def get_user_preferences(token: str) -> Tuple[Optional[Dict[str, Any]], Optional
             headers=_get_headers(token),
             timeout=5
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to fetch job preferences")
+        return _safe_json_response(r, "Failed to fetch job preferences")
+    except requests.exceptions.Timeout:
+        return None, "Preferences request timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -251,9 +282,9 @@ def update_user_preferences(token: str, prefs_data: Dict[str, Any]) -> Tuple[Opt
             json=prefs_data,
             timeout=5
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to update job preferences")
+        return _safe_json_response(r, "Failed to update job preferences")
+    except requests.exceptions.Timeout:
+        return None, "Preferences update request timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -279,9 +310,9 @@ def get_jobs(
             params=params,
             timeout=5
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to fetch jobs")
+        return _safe_json_response(r, "Failed to fetch jobs")
+    except requests.exceptions.Timeout:
+        return None, "Job catalog request timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -295,9 +326,9 @@ def index_resume(token: str, resume_id: int) -> Tuple[Optional[Dict[str, Any]], 
             headers=_get_headers(token),
             timeout=30
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to index resume vectors")
+        return _safe_json_response(r, "Failed to index resume vectors")
+    except requests.exceptions.Timeout:
+        return None, "Resume vector indexing timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -318,9 +349,9 @@ def search_resume_semantic(
             json=payload,
             timeout=15
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to search resume vectors")
+        return _safe_json_response(r, "Failed to search resume vectors")
+    except requests.exceptions.Timeout:
+        return None, "Resume search timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -332,9 +363,9 @@ def index_all_jobs_semantic(token: str) -> Tuple[Optional[Dict[str, Any]], Optio
             headers=_get_headers(token),
             timeout=60
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to index jobs into Qdrant")
+        return _safe_json_response(r, "Failed to index jobs into Qdrant")
+    except requests.exceptions.Timeout:
+        return None, "Job vector indexing timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -348,9 +379,9 @@ def search_jobs_semantic(token: str, query: str, limit: int = 5) -> Tuple[Option
             json=payload,
             timeout=15
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to search jobs vector index")
+        return _safe_json_response(r, "Failed to search jobs vector index")
+    except requests.exceptions.Timeout:
+        return None, "Job vector search timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -362,9 +393,9 @@ def get_resume_matched_jobs_semantic(token: str, resume_id: int) -> Tuple[Option
             headers=_get_headers(token),
             timeout=15
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to retrieve semantically matched jobs")
+        return _safe_json_response(r, "Failed to retrieve semantically matched jobs")
+    except requests.exceptions.Timeout:
+        return None, "Vector matching request timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -390,9 +421,9 @@ def get_job_recommendations(
             json=payload,
             timeout=30
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to retrieve job recommendations")
+        return _safe_json_response(r, "Failed to retrieve job recommendations")
+    except requests.exceptions.Timeout:
+        return None, "Recommendation request timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -406,9 +437,9 @@ def get_job_by_id(token: Optional[str], job_id: str) -> Tuple[Optional[Dict[str,
             headers=_get_headers(token),
             timeout=5
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", f"Job {job_id} not found")
+        return _safe_json_response(r, f"Job {job_id} not found")
+    except requests.exceptions.Timeout:
+        return None, "Job lookup timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -421,9 +452,9 @@ def chat_with_assistant(token: str, message: str, history: Optional[List[Dict[st
             json={"message": message, "history": history or []},
             timeout=30
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Assistant failed to generate response")
+        return _safe_json_response(r, "Assistant failed to generate response")
+    except requests.exceptions.Timeout:
+        return None, "AI assistant request timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -435,9 +466,9 @@ def get_career_insights(token: str) -> Tuple[Optional[Dict[str, Any]], Optional[
             headers=_get_headers(token),
             timeout=45
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to generate career insights")
+        return _safe_json_response(r, "Failed to generate career insights")
+    except requests.exceptions.Timeout:
+        return None, "Career insights request timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -449,11 +480,11 @@ def get_dashboard_overview(token: str) -> Tuple[Optional[Dict[str, Any]], Option
         r = requests.get(
             f"{API_BASE_URL}/api/v1/dashboard/overview",
             headers=_get_headers(token),
-            timeout=10
+            timeout=15
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to fetch dashboard overview")
+        return _safe_json_response(r, "Failed to fetch dashboard overview")
+    except requests.exceptions.Timeout:
+        return None, "Dashboard overview request timed out."
     except Exception as e:
         return None, f"Connection error: {str(e)}"
 
@@ -482,9 +513,7 @@ def rerun_dashboard_pipeline(
             json=payload if payload else None,
             timeout=60
         )
-        if r.status_code == 200:
-            return r.json(), None
-        return None, r.json().get("detail", "Failed to re-run pipeline analysis")
+        return _safe_json_response(r, "Failed to re-run pipeline analysis")
     except requests.exceptions.Timeout:
         return None, "Job matching is taking longer than expected. Please try again."
     except Exception as e:

@@ -223,6 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
 
                     if (res.ok) {
+                        clearError();
                         clearOverallTimeout();
                         // Poll until backend background pipeline finishes and reload automatically
                         pollUntilFinished();
@@ -255,6 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
 
                     if (res.ok) {
+                        clearError();
                         clearOverallTimeout();
                         // Poll until backend background pipeline finishes and reload automatically
                         pollUntilFinished();
@@ -270,9 +272,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
             } catch (err) {
-                // If fetch fails (network interruption), fall back to traditional submit
                 clearOverallTimeout();
-                matcherForm.submit();
+                hideProcessingState();
+                setButtonLoading(false);
+                showError('Network communication error. Please check your connection or try again.');
             }
         });
     }

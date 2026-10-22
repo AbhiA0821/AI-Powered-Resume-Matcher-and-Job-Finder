@@ -23,8 +23,19 @@ def _ensure_jobs_table_initialized() -> None:
             has_rows = cnt > 0
 
         if not has_table or not has_rows:
-            csv_path = os.path.join(BASE_DIR, "data", "job_descriptions.csv")
-            if os.path.exists(csv_path):
+            potential_csv_paths = [
+                os.path.join(BASE_DIR, "data", "job_descriptions.csv"),
+                os.path.join(os.getcwd(), "data", "job_descriptions.csv"),
+                os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "data", "job_descriptions.csv"),
+                os.path.abspath("data/job_descriptions.csv")
+            ]
+            csv_path = None
+            for p in potential_csv_paths:
+                if os.path.exists(p):
+                    csv_path = p
+                    break
+
+            if csv_path and os.path.exists(csv_path):
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS jobs (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,

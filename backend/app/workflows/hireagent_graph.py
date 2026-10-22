@@ -79,7 +79,7 @@ def retrieve_jobs_node(state: HireAgentState) -> Dict[str, Any]:
             for f in concurrent.futures.as_completed(future_to_role):
                 role_name = future_to_role[f]
                 try:
-                    res = f.result(timeout=15.0)
+                    res = f.result(timeout=5.0)
                     if res:
                         results.extend(res)
                 except Exception as e:
