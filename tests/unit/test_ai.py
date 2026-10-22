@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch
-from app.services.llm_service import build_rag_prompt, generate_grounded_recommendation
+from app.services.ai_service import build_rag_prompt, generate_grounded_recommendation
 from app.workflows.hireagent_graph import run_hireagent_matching_workflow
 from app.services.job_sources.rapidapi_job_service import NormalizedJob
 

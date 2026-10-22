@@ -1,0 +1,6 @@
+# HireAgent Frontend Dependencies (Flask Web App)
+flask
+gunicorn
+requests
+pyjwt
+python-dotenv

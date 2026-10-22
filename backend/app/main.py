@@ -32,14 +32,7 @@ def startup_event():
     except Exception as e:
         logger.warning(f"Database schema initialization check notice: {e}")
 
-    import threading
-    def _warmup():
-        try:
-            from app.services.embeddings import get_embedding_model
-            get_embedding_model()
-        except Exception:
-            pass
-    threading.Thread(target=_warmup, daemon=True).start()
+    # Database schema check completed without eager background model allocation to preserve Render Free 512MB RAM
 
 # Root level health endpoint
 @app.get("/health", tags=["Health"], summary="Health Check")

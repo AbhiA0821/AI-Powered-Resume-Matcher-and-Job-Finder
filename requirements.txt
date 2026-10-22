@@ -13,7 +13,8 @@ python-multipart
 pandas
 numpy
 scikit-learn
-sentence-transformers
+fastembed
+onnxruntime
 qdrant-client
 
 # AI & LLM Orchestration

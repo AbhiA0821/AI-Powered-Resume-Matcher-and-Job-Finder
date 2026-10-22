@@ -5,14 +5,25 @@ import requests
 def _get_api_base_url() -> str:
     url = os.environ.get("BACKEND_URL") or os.environ.get("HIREAGENT_API_URL") or "http://127.0.0.1:8000"
     url = url.strip().rstrip("/")
+    # On Render Free tier, internal service hostnames (e.g. 'hireagent-backend:10000' or 'hireagent-backend')
+    # cannot be resolved via DNS because private networking is disabled.
+    # Automatically resolve to the public production backend URL.
+    if "hireagent-backend" in url and "onrender.com" not in url:
+        return "https://hireagent-backend.onrender.com"
     if not url.startswith("http://") and not url.startswith("https://"):
-        # If it contains a dot and doesn't look like an IP or local service (e.g. *.onrender.com), use https
-        # Internal service names on Render (e.g. 'hireagent-backend:10000' or 'localhost') use http
-        if "." in url and not url.split(":")[0].replace(".", "").isdigit():
+        # If it contains onrender.com or a non-IP domain, default to https
+        if "onrender.com" in url or ("." in url and not url.split(":")[0].replace(".", "").isdigit()):
             url = f"https://{url}"
         else:
             url = f"http://{url}"
+    # Strip invalid port suffix on public onrender.com domains if present
+    if "onrender.com" in url and ":10000" in url:
+        url = url.replace(":10000", "")
     return url
+
+def get_api_base_url() -> str:
+    """Returns dynamically resolved backend base URL."""
+    return _get_api_base_url()
 
 API_BASE_URL = _get_api_base_url()
 

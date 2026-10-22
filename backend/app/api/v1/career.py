@@ -14,10 +14,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.services.auth import get_current_user
 from app.tools.schemas import ToolContext
-from app.services.crew_service import (
-    generate_career_insights,
-    CareerInsightsReport
-)
+from app.services.crew_service import CareerInsightsReport
 
 logger = logging.getLogger("hireagent.career")
 
@@ -61,6 +58,7 @@ def get_career_insights(
     Uses cached result if available. Falls back deterministically if AI agents fail.
     """
     _check_career_rate_limit(current_user.id)
+    from app.services.crew_service import generate_career_insights
 
     context = ToolContext(
         user_id=current_user.id,

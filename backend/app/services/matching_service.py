@@ -3,10 +3,6 @@ import time
 import math
 import logging
 from typing import List, Dict, Any, Optional, Tuple
-import pandas as pd
-from sklearn.neighbors import NearestNeighbors
-from sklearn.feature_extraction.text import TfidfVectorizer
-
 from app.services.skill_service import (
     extract_skills,
     parse_job_required_skills,
@@ -23,53 +19,93 @@ _JOB_EMBEDDINGS_CACHE: Dict[str, List[float]] = {}
 MAX_JOB_CACHE_SIZE = 5000
 
 class HybridKNNMatcher:
-    """Encapsulates the existing TF-IDF + NearestNeighbors matching logic from matcher.py.
-    Provides optional ML matching signal for hybrid scoring.
+    """Encapsulates the TF-IDF cosine distance matching logic from matcher.py.
+    Provides optional ML matching signal for hybrid scoring using exact mathematical TF-IDF
+    vectorization, avoiding heavy Scipy/Scikit-learn memory overhead (~128MB saved).
     """
     def __init__(self):
-        self.knn = NearestNeighbors(n_neighbors=5, metric='cosine')
-        self.vectorizer = TfidfVectorizer()
-        self.jobs_df = None
+        self.vocab_idx = {}
+        self.idf = None
+        self.job_vectors = None
+        self.jobs_list = None
+        self.job_id_to_idx = None
         self.is_fitted = False
 
     def fit(self, jobs: List[Dict[str, Any]]):
         if not jobs:
             return
-        df = pd.DataFrame(jobs)
-        self.jobs_df = df.reset_index(drop=True)
-        job_texts = (
-            df["required_skills"].fillna("") + " " +
-            df["job_role"].fillna("") + " " +
-            df["job_title"].fillna("")
-        ).tolist()
         try:
-            job_vectors = self.vectorizer.fit_transform(job_texts)
-            n_neighbors = min(len(jobs), 5)
-            self.knn = NearestNeighbors(n_neighbors=n_neighbors, metric='cosine')
-            self.knn.fit(job_vectors)
+            import math
+            import re
+            from collections import Counter
+            import numpy as np
+
+            self.jobs_list = list(jobs)
+            self.job_id_to_idx = {j.get("id"): idx for idx, j in enumerate(self.jobs_list)}
+
+            # Tokenize job texts using standard scikit-learn word token pattern
+            tokenized_docs = [
+                re.findall(r"(?u)\b\w\w+\b", f"{j.get('required_skills') or ''} {j.get('job_role') or ''} {j.get('job_title') or ''}".lower())
+                for j in self.jobs_list
+            ]
+            N = len(tokenized_docs)
+            df_counter = Counter()
+            for tokens in tokenized_docs:
+                df_counter.update(set(tokens))
+
+            vocab = sorted(df_counter.keys())
+            self.vocab_idx = {w: i for i, w in enumerate(vocab)}
+            # Standard smooth_idf: log((1 + N) / (1 + df)) + 1
+            self.idf = np.array([math.log((1 + N) / (1 + df_counter[w])) + 1.0 for w in vocab], dtype=np.float32)
+            # Pre-compute unit-normalized TF-IDF vector for each job's required_skills + job_title
+            self.job_vectors = [
+                self._vectorize(f"{j.get('required_skills') or ''} {j.get('job_title') or ''}")
+                for j in self.jobs_list
+            ]
             self.is_fitted = True
-        except Exception:
+        except Exception as e:
+            logger.warning(f"HybridKNNMatcher fit encountered error, falling back gracefully: {e}")
             self.is_fitted = False
+
+    def _vectorize(self, text: str):
+        import re
+        from collections import Counter
+        import numpy as np
+
+        tokens = re.findall(r"(?u)\b\w\w+\b", text.lower())
+        if not tokens or not self.vocab_idx:
+            return None
+        tf = Counter(tokens)
+        v = np.zeros(len(self.vocab_idx), dtype=np.float32)
+        for w, count in tf.items():
+            idx = self.vocab_idx.get(w)
+            if idx is not None:
+                v[idx] = count * self.idf[idx]
+        norm = np.linalg.norm(v)
+        if norm > 0:
+            v /= norm
+        return v
 
     def get_job_similarity(self, resume_skills: List[str], job_id: int) -> float:
         """Returns 0.0 - 100.0 similarity for a specific job_id using TF-IDF cosine distance."""
-        if not self.is_fitted or self.jobs_df is None or len(self.jobs_df) == 0:
+        if not self.is_fitted or not self.job_vectors or not self.job_id_to_idx:
             return 50.0
         try:
+            import numpy as np
             resume_text = " ".join(resume_skills) if resume_skills else "software"
-            resume_vec = self.vectorizer.transform([resume_text])
-            # Find row index of this job
-            matching_rows = self.jobs_df.index[self.jobs_df['id'] == job_id].tolist()
-            if not matching_rows:
+            r_vec = self._vectorize(resume_text)
+            if r_vec is None:
                 return 50.0
-            idx = matching_rows[0]
-            job_vec = self.vectorizer.transform([
-                str(self.jobs_df.iloc[idx].get("required_skills", "")) + " " +
-                str(self.jobs_df.iloc[idx].get("job_title", ""))
-            ])
-            # Cosine similarity between sparse TF-IDF vectors
-            dot = (resume_vec * job_vec.T).toarray()[0][0]
-            sim = max(0.0, min(1.0, float(dot)))
+
+            idx = self.job_id_to_idx.get(job_id)
+            if idx is None or idx >= len(self.job_vectors):
+                return 50.0
+            j_vec = self.job_vectors[idx]
+            if j_vec is None:
+                return 50.0
+
+            dot = float(np.dot(r_vec, j_vec))
+            sim = max(0.0, min(1.0, dot))
             return round(sim * 100.0, 1)
         except Exception:
             return 50.0

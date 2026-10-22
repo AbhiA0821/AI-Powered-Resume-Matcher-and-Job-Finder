@@ -1,8 +1,8 @@
 {
   "evaluation_name": "HireAgent Embedding and Hybrid Matching Evaluation",
-  "timestamp": "2026-10-19T05:06:24Z",
+  "timestamp": "2026-10-22T10:36:38Z",
   "overall_status": "PASS",
-  "elapsed_seconds": 36.96,
+  "elapsed_seconds": 4.05,
   "bge_embedding_evaluation": {
     "status": "PASS",
     "embedding_dimension": 384,
@@ -11,9 +11,9 @@
     "has_nan_or_inf": false,
     "empty_input_handled": true,
     "is_deterministic": true,
-    "semantic_similarity_related": 0.7472,
-    "semantic_similarity_unrelated": 0.4518,
-    "discrimination_gap": 0.2954
+    "semantic_similarity_related": 0.747,
+    "semantic_similarity_unrelated": 0.4515,
+    "discrimination_gap": 0.2955
   },
   "hybrid_matcher_evaluation": {
     "status": "PASS",

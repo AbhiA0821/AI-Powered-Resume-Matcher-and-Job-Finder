@@ -24,12 +24,9 @@ import logging
 from typing import List, Dict, Any, Optional, Tuple
 from pydantic import BaseModel, Field
 
-# Ensure telemetry is completely disabled before CrewAI imports
+# Telemetry disabled before any potential CrewAI execution
 os.environ["CREWAI_TELEMETRY_OPT_OUT"] = "true"
 os.environ["OTEL_SDK_DISABLED"] = "true"
-
-from crewai import Agent, Task, Crew, Process, LLM
-from crewai.tools import BaseTool
 
 from app.core.config import settings
 from app.tools.registry import tool_registry, ToolContext
@@ -76,75 +73,12 @@ INSIGHTS_CACHE_TTL_SECONDS = 3600  # 1 hour
 
 
 # -------------------------------------------------------------------------
-# CrewAI BaseTool Wrappers (reusing Registry handlers)
+# LLM Configuration for CrewAI (Lazy Loaded)
 # -------------------------------------------------------------------------
 
-class StudentProfileTool(BaseTool):
-    name: str = "get_student_profile"
-    description: str = "Retrieves student's profile, verified skills, and role from server context."
-    context: ToolContext
-
-    def _run(self) -> str:
-        res = tool_registry.execute("get_student_profile", {}, self.context)
-        return json.dumps(res)
-
-
-class SearchLiveJobsTool(BaseTool):
-    name: str = "search_live_jobs"
-    description: str = "Searches active jobs in India. Use at most ONCE per execution."
-    context: ToolContext
-
-    def _run(self, role: str, location: str = "India", limit: int = 5) -> str:
-        res = tool_registry.execute("search_live_jobs", {"role": role, "location": location, "limit": limit}, self.context)
-        return json.dumps(res)
-
-
-class JobDetailsTool(BaseTool):
-    name: str = "get_job_details"
-    description: str = "Retrieves stored details for a job_id."
-    context: ToolContext
-
-    def _run(self, job_id: str) -> str:
-        res = tool_registry.execute("get_job_details", {"job_id": job_id}, self.context)
-        return json.dumps(res)
-
-
-class JobRequirementsTool(BaseTool):
-    name: str = "get_job_requirements"
-    description: str = "Retrieves extracted required skills for a job_id."
-    context: ToolContext
-
-    def _run(self, job_id: str) -> str:
-        res = tool_registry.execute("get_job_requirements", {"job_id": job_id}, self.context)
-        return json.dumps(res)
-
-
-class SkillGapTool(BaseTool):
-    name: str = "calculate_skill_gap"
-    description: str = "Calculates matched skills, missing skills, and prioritized learning items for a job_id."
-    context: ToolContext
-
-    def _run(self, job_id: str) -> str:
-        res = tool_registry.execute("calculate_skill_gap", {"job_id": job_id}, self.context)
-        return json.dumps(res)
-
-
-class CareerKnowledgeTool(BaseTool):
-    name: str = "search_career_knowledge"
-    description: str = "Retrieves curated static learning roadmaps and interview topics."
-    context: ToolContext
-
-    def _run(self, query: str, top_k: int = 3) -> str:
-        res = tool_registry.execute("search_career_knowledge", {"query": query, "top_k": top_k}, self.context)
-        return json.dumps(res)
-
-
-# -------------------------------------------------------------------------
-# LLM Configuration for CrewAI
-# -------------------------------------------------------------------------
-
-def _get_crew_llm(provider: str = "gemini") -> Optional[LLM]:
+def _get_crew_llm(provider: str = "gemini") -> Optional[Any]:
     """Builds CrewAI LLM instance without hardcoding new model names."""
+    from crewai import LLM
     if provider == "gemini":
         api_key = settings.GEMINI_API_KEY or os.getenv("GEMINI_API_KEY")
         if not api_key:
@@ -167,11 +101,68 @@ def _get_crew_llm(provider: str = "gemini") -> Optional[LLM]:
 
 
 # -------------------------------------------------------------------------
-# Crew Builder
+# Crew Builder (Lazy Loaded)
 # -------------------------------------------------------------------------
 
-def build_career_insights_crew(context: ToolContext, llm_instance: LLM) -> Crew:
+def build_career_insights_crew(context: ToolContext, llm_instance: Any) -> Any:
     """Constructs the 5 sequential agents and linked tasks for career insights."""
+    from crewai import Agent, Task, Crew, Process
+    from crewai.tools import BaseTool
+
+    class StudentProfileTool(BaseTool):
+        name: str = "get_student_profile"
+        description: str = "Retrieves student's profile, verified skills, and role from server context."
+        context: ToolContext
+
+        def _run(self) -> str:
+            res = tool_registry.execute("get_student_profile", {}, self.context)
+            return json.dumps(res)
+
+    class SearchLiveJobsTool(BaseTool):
+        name: str = "search_live_jobs"
+        description: str = "Searches active jobs in India. Use at most ONCE per execution."
+        context: ToolContext
+
+        def _run(self, role: str, location: str = "India", limit: int = 5) -> str:
+            res = tool_registry.execute("search_live_jobs", {"role": role, "location": location, "limit": limit}, self.context)
+            return json.dumps(res)
+
+    class JobDetailsTool(BaseTool):
+        name: str = "get_job_details"
+        description: str = "Retrieves stored details for a job_id."
+        context: ToolContext
+
+        def _run(self, job_id: str) -> str:
+            res = tool_registry.execute("get_job_details", {"job_id": job_id}, self.context)
+            return json.dumps(res)
+
+    class JobRequirementsTool(BaseTool):
+        name: str = "get_job_requirements"
+        description: str = "Retrieves extracted required skills for a job_id."
+        context: ToolContext
+
+        def _run(self, job_id: str) -> str:
+            res = tool_registry.execute("get_job_requirements", {"job_id": job_id}, self.context)
+            return json.dumps(res)
+
+    class SkillGapTool(BaseTool):
+        name: str = "calculate_skill_gap"
+        description: str = "Calculates matched skills, missing skills, and prioritized learning items for a job_id."
+        context: ToolContext
+
+        def _run(self, job_id: str) -> str:
+            res = tool_registry.execute("calculate_skill_gap", {"job_id": job_id}, self.context)
+            return json.dumps(res)
+
+    class CareerKnowledgeTool(BaseTool):
+        name: str = "search_career_knowledge"
+        description: str = "Retrieves curated static learning roadmaps and interview topics."
+        context: ToolContext
+
+        def _run(self, query: str, top_k: int = 3) -> str:
+            res = tool_registry.execute("search_career_knowledge", {"query": query, "top_k": top_k}, self.context)
+            return json.dumps(res)
+
     # Instantiate tools bound to server-side context
     profile_tool = StudentProfileTool(context=context)
     jobs_tool = SearchLiveJobsTool(context=context)

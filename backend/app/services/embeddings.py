@@ -1,5 +1,8 @@
 import math
+import logging
 from typing import List, Optional
+
+logger = logging.getLogger("hireagent.embeddings")
 
 # Singleton container for lazy model initialization
 _model_instance = None
@@ -8,18 +11,29 @@ EMBEDDING_DIMENSION = 384
 _EMBED_CACHE: dict = {}
 
 def get_embedding_model():
-    """Lazily initializes and returns the SentenceTransformer model singleton.
-    Prioritizes locally cached weights to eliminate unauthenticated Hugging Face Hub network delays.
+    """Lazily initializes and returns the embedding model singleton.
+    Uses FastEmbed (ONNX Runtime) for ultra-low memory footprint (~67MB model, no PyTorch overhead),
+    ensuring operation comfortably within Render Free's 512MB RAM constraint.
+    Falls back gracefully to SentenceTransformer if FastEmbed is unavailable.
     """
     global _model_instance
     if _model_instance is None:
-        from sentence_transformers import SentenceTransformer
         try:
-            # Load from local cache first (instant zero-network load)
-            _model_instance = SentenceTransformer(MODEL_NAME, local_files_only=True)
-        except Exception:
-            # Fallback to standard download if cache not populated (e.g. fresh Render container)
-            _model_instance = SentenceTransformer(MODEL_NAME)
+            from fastembed import TextEmbedding
+            # Initialize with 1 thread for predictable minimal memory footprint
+            _model_instance = TextEmbedding(MODEL_NAME, threads=1)
+            logger.info(f"Loaded FastEmbed ONNX embedding model: {MODEL_NAME}")
+        except Exception as fe_err:
+            logger.warning(f"FastEmbed initialization notice: {fe_err}. Falling back to SentenceTransformer.")
+            try:
+                from sentence_transformers import SentenceTransformer
+                try:
+                    _model_instance = SentenceTransformer(MODEL_NAME, local_files_only=True)
+                except Exception:
+                    _model_instance = SentenceTransformer(MODEL_NAME)
+            except Exception as st_err:
+                logger.error(f"Failed to load embedding model: {st_err}")
+                raise RuntimeError(f"Embedding model unavailable: {st_err}")
     return _model_instance
 
 def _validate_single_text(text: str, arg_name: str = "text") -> str:
@@ -58,9 +72,14 @@ def embed_text(text: str) -> List[float]:
 
     model = get_embedding_model()
     
-    # Generate normalized embedding vector
-    raw_embedding = model.encode(valid_text, normalize_embeddings=True, convert_to_numpy=True)
-    vector = [float(x) for x in raw_embedding.tolist()]
+    # Generate normalized embedding vector via FastEmbed or fallback
+    if hasattr(model, "embed"):
+        raw_embedding = next(iter(model.embed([valid_text])))
+        vector = [float(x) for x in raw_embedding.tolist()]
+    else:
+        raw_embedding = model.encode(valid_text, normalize_embeddings=True, convert_to_numpy=True)
+        vector = [float(x) for x in raw_embedding.tolist()]
+
     validated = _validate_vector_output(vector)
     
     if len(_EMBED_CACHE) < 2000:
@@ -82,11 +101,16 @@ def embed_texts(texts: List[str]) -> List[List[float]]:
     model = get_embedding_model()
     
     # Generate batch embeddings preserving order
-    raw_embeddings = model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
-    
     output_vectors: List[List[float]] = []
-    for idx, raw_vec in enumerate(raw_embeddings):
-        vector = [float(x) for x in raw_vec.tolist()]
-        output_vectors.append(_validate_vector_output(vector))
+    if hasattr(model, "embed"):
+        raw_embeddings = list(model.embed(texts))
+        for raw_vec in raw_embeddings:
+            vector = [float(x) for x in raw_vec.tolist()]
+            output_vectors.append(_validate_vector_output(vector))
+    else:
+        raw_embeddings = model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
+        for raw_vec in raw_embeddings:
+            vector = [float(x) for x in raw_vec.tolist()]
+            output_vectors.append(_validate_vector_output(vector))
         
     return output_vectors

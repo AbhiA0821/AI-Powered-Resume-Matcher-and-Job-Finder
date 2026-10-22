@@ -8,7 +8,7 @@ services:
     region: oregon
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn --app-dir backend app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn --app-dir backend app.main:app --host 0.0.0.0 --port $PORT --workers 1
     healthCheckPath: /health
     autoDeploy: false
     envVars:
@@ -33,7 +33,7 @@ services:
       - key: JWT_ACCESS_TOKEN_EXPIRE_MINUTES
         value: "60"
       - key: FRONTEND_URL
-        sync: false
+        value: https://hireagent-frontend.onrender.com
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
@@ -69,8 +69,8 @@ services:
     env: python
     region: oregon
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --bind 0.0.0.0:$PORT "frontend.app:app"
+    buildCommand: pip install -r frontend/requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 "frontend.app:app"
     healthCheckPath: /health
     autoDeploy: false
     envVars:
@@ -79,10 +79,7 @@ services:
       - key: FLASK_SECRET_KEY
         generateValue: true
       - key: BACKEND_URL
-        fromService:
-          type: web
-          name: hireagent-backend
-          property: hostport
+        value: https://hireagent-backend.onrender.com
       - key: FIREBASE_API_KEY
         sync: false
       - key: FIREBASE_AUTH_DOMAIN
