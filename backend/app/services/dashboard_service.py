@@ -10,6 +10,7 @@ Adheres strictly to:
 
 import os
 import time
+import json
 import logging
 import threading
 from datetime import datetime, timezone
@@ -39,9 +40,14 @@ from app.schemas.dashboard import (
 
 logger = logging.getLogger("hireagent.dashboard")
 
-# In-memory per-user state storage
-# Note: For production multi-worker setups, this would be backed by Redis or an idempotent DB table.
-# As documented for single-process Waitress/Uvicorn, in-memory state provides zero-latency isolation.
+# In-memory per-user state storage backed by lightweight disk persistence
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+CACHE_DIR = os.environ.get("HIREAGENT_CACHE_DIR") or os.path.join(BASE_DIR, "data", "dashboard_cache")
+
+def _get_user_cache_path(user_id: int) -> str:
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    return os.path.join(CACHE_DIR, f"user_{int(user_id)}.json")
+
 _USER_DASHBOARD_STATE: Dict[int, Dict[str, Any]] = {}
 _ACTIVE_PIPELINE_USERS: Set[int] = set()
 _PIPELINE_LOCK = threading.Lock()
@@ -50,21 +56,76 @@ _PIPELINE_LOCK = threading.Lock()
 _OVERVIEW_CACHE: Dict[Tuple[int, Optional[int], Optional[str], Optional[str], Optional[float], bool, str], Tuple[float, DashboardOverviewResponse]] = {}
 OVERVIEW_CACHE_TTL_SECONDS = 30.0
 
+def save_user_state(user_id: int) -> None:
+    """Safely persists the user dashboard state to disk for restart and reload resilience."""
+    try:
+        state = _USER_DASHBOARD_STATE.get(user_id)
+        if not state:
+            return
+        
+        payload = {
+            "is_processing": bool(state.get("is_processing", False)),
+            "matching_completed": bool(state.get("matching_completed", False)),
+            "matched_resume_id": state.get("matched_resume_id"),
+            "matched_target_role": state.get("matched_target_role"),
+            "vector_indexed": bool(state.get("vector_indexed", False)),
+            "matches": state.get("matches", []),
+            "discovery_stats": state.get("discovery_stats", {}),
+            "recommendations": state.get("recommendations"),
+            "pipeline_stages": state.get("pipeline_stages", {}),
+            "last_pipeline_update": state.get("last_pipeline_update", time.time())
+        }
+        
+        path = _get_user_cache_path(user_id)
+        tmp_path = f"{path}.tmp.{os.getpid()}"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+        os.replace(tmp_path, path)
+    except Exception as e:
+        logger.warning(f"Failed to persist dashboard state for user {user_id}: {e}")
+
 def invalidate_user_dashboard(user_id: int):
-    """Invalidates stored dashboard state and cached overview for a user."""
+    """Invalidates stored dashboard state, persistent cache file, and overview cache for a user."""
     if user_id in _USER_DASHBOARD_STATE:
         _USER_DASHBOARD_STATE.pop(user_id, None)
     
+    try:
+        path = _get_user_cache_path(user_id)
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception as e:
+        logger.debug(f"Could not remove persistent state cache for user {user_id}: {e}")
+
     # Invalidate overview cache for this user
     keys_to_remove = [k for k in _OVERVIEW_CACHE.keys() if k[0] == user_id]
     for k in keys_to_remove:
         _OVERVIEW_CACHE.pop(k, None)
 
 def get_user_state(user_id: int) -> Dict[str, Any]:
-    """Retrieves or initializes the mutable in-memory state dictionary for a user."""
-    if user_id not in _USER_DASHBOARD_STATE:
+    """Retrieves mutable in-memory state, falling back to persistent disk cache."""
+    if user_id in _USER_DASHBOARD_STATE:
+        return _USER_DASHBOARD_STATE[user_id]
+    
+    # Attempt restoring from persistent disk cache
+    restored = None
+    try:
+        path = _get_user_cache_path(user_id)
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                restored = json.load(f)
+    except Exception as e:
+        logger.warning(f"Failed to load persistent dashboard state for user {user_id}: {e}")
+
+    if restored and isinstance(restored, dict):
+        if user_id not in _ACTIVE_PIPELINE_USERS:
+            restored["is_processing"] = False
+        _USER_DASHBOARD_STATE[user_id] = restored
+    else:
         _USER_DASHBOARD_STATE[user_id] = {
             "is_processing": False,
+            "matching_completed": False,
+            "matched_resume_id": None,
+            "matched_target_role": None,
             "vector_indexed": False,
             "pipeline_stages": {},
             "matches": [],
@@ -321,6 +382,7 @@ def run_user_pipeline_sync(
         if 'detected_role' in locals():
             state["matched_target_role"] = detected_role
         state["last_pipeline_update"] = time.time()
+        save_user_state(user_id)
         if close_db_on_exit and db is not None:
             try:
                 db.close()
@@ -361,9 +423,26 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
         if now - cached_time < OVERVIEW_CACHE_TTL_SECONDS:
             return cached_overview
 
-    # Invalidate stored matches if in-memory matches are for a different role than primary_role
+    # Invalidate stored matches if stored matches are for a different role, resume, or model
     stored_matches_role = user_state.get("matched_target_role")
     if stored_matches_role and role_key and stored_matches_role.lower().strip() != role_key:
+        user_state["matches"] = []
+        user_state["discovery_stats"] = {}
+        user_state["matching_completed"] = False
+
+    stored_resume_id = user_state.get("matched_resume_id")
+    stored_resume_name = user_state.get("resume_name")
+    if not resume or \
+       (stored_resume_id is not None and resume_id is not None and stored_resume_id != resume_id) or \
+       (stored_resume_name and resume and resume.filename and stored_resume_name != resume.filename):
+        user_state["matches"] = []
+        user_state["discovery_stats"] = {}
+        user_state["matching_completed"] = False
+        if not resume:
+            user_state["pipeline_stages"] = {}
+
+    stored_model = user_state.get("matched_model_version")
+    if stored_model and stored_model != get_configured_model_name():
         user_state["matches"] = []
         user_state["discovery_stats"] = {}
         user_state["matching_completed"] = False
@@ -405,71 +484,13 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
     )
 
     # --- Discovery & Matches ---
-    # Read from stored user state with pipeline lock check to prevent concurrent race conditions
-    should_run_catalog_match = False
-    with _PIPELINE_LOCK:
-        stored_matches_raw = user_state.get("matches", [])
-        stored_stats = user_state.get("discovery_stats", {})
-        is_currently_processing = bool(user_state.get("is_processing", False) or (user_id in _ACTIVE_PIPELINE_USERS))
-        has_completed = bool(
-            user_state.get("matching_completed") and
-            user_state.get("matched_resume_id") == resume_id and
-            user_state.get("matched_target_role") == primary_role
-        )
-        if not has_completed and not stored_matches_raw and not is_currently_processing and resume and resume.extracted_text:
-            _ACTIVE_PIPELINE_USERS.add(user_id)
-            user_state["is_processing"] = True
-            should_run_catalog_match = True
+    # Overview assembly is strictly read-only and never initiates a new matching pipeline.
+    stored_matches_raw = user_state.get("matches", [])
+    stored_stats = user_state.get("discovery_stats", {})
 
-    if should_run_catalog_match:
-        try:
-            log_memory_checkpoint("overview:catalog_match:start", f"user={user_id}")
-            cat_result = get_jobs_from_db(limit=50)
-            cat_jobs = cat_result.get("jobs", [])
-            if cat_jobs:
-                from app.services.skill_service import discover_relevant_roles
-                rel_roles = discover_relevant_roles(skills, resume_text, target_role=primary_role, max_roles=3) if skills else [primary_role]
-                ranked_cat = match_and_rank_jobs(
-                    resume_text=resume_text,
-                    jobs=cat_jobs,
-                    target_role=primary_role,
-                    relevant_roles=rel_roles,
-                    top_k=10,
-                    filter_unrelated_roles=True
-                )
-                from app.services.url_validator import validate_jobs_batch
-                ranked_cat = validate_jobs_batch(ranked_cat, max_to_validate=0)
-                user_state["matches"] = ranked_cat
-                stored_matches_raw = ranked_cat
-                min_thresh = profile.min_match_score if profile else 65.0
-                matches_above_threshold = [j for j in ranked_cat if j.get("match_percentage", 0) >= min_thresh]
-                user_state["discovery_stats"] = {
-                    "total_jobs_analyzed": cat_result.get("total", len(cat_jobs)),
-                    "jobs_retrieved": len(cat_jobs),
-                    "relevant_jobs": len(ranked_cat),
-                    "matched_jobs": len(matches_above_threshold),
-                    "source": "local",
-                    "last_updated": datetime.now(timezone.utc).isoformat(),
-                    "min_score_threshold": min_thresh
-                }
-                stored_stats = user_state["discovery_stats"]
-            user_state["matching_completed"] = True
-            user_state["matched_resume_id"] = resume_id
-            user_state["matched_target_role"] = primary_role
-            log_memory_checkpoint("overview:catalog_match:complete", f"user={user_id}")
-        except Exception as e_mat:
-            logger.warning(f"Catalog fallback matching in overview assembly failed: {e_mat}")
-        finally:
-            with _PIPELINE_LOCK:
-                _ACTIVE_PIPELINE_USERS.discard(user_id)
-                user_state["is_processing"] = False
-            user_state["matching_completed"] = True
-            user_state["matched_resume_id"] = resume_id
-            user_state["matched_target_role"] = primary_role
-            import gc
-            gc.collect()
+    # Stored matches and discovery stats are preserved for this context unless invalidated above.
 
-    # If no stored stats exist in memory yet, check if catalog exists to provide honest stats
+    # If no stored stats exist for this context, provide honest baseline stats
     if not stored_stats:
         cat_result = get_jobs_from_db(limit=10)
         total_jobs_in_cat = cat_result.get("total", 0)
@@ -561,7 +582,7 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
     from app.services.crew_service import _INSIGHTS_CACHE
     crew_key = f"user_{user_id}"
     
-    if crew_key in _INSIGHTS_CACHE:
+    if resume and crew_key in _INSIGHTS_CACHE:
         c_time, c_report = _INSIGHTS_CACHE[crew_key]
         items = list(dict.fromkeys(c_report.learning_priorities + c_report.career_directions))[:5]
         recommendations_overview = RecommendationsOverview(
@@ -571,7 +592,7 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
             items=items,
             degraded=c_report.is_degraded
         )
-    elif stored_rec and stored_rec.get("available"):
+    elif resume and stored_rec and stored_rec.get("available"):
         recommendations_overview = RecommendationsOverview(
             available=True,
             generated_at=stored_rec.get("generated_at"),
@@ -616,7 +637,7 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
     recorded_stages = user_state.get("pipeline_stages", {})
 
     for stage_name in stages_order:
-        if stage_name in recorded_stages:
+        if stage_name in recorded_stages and (resume is not None or stage_name == "AI Assistant Available"):
             rec = recorded_stages[stage_name]
             pipeline_list.append(PipelineStage(
                 stage=stage_name,
@@ -654,7 +675,10 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
                     status = "not_started"
                     detail = "Awaiting resume parsing"
             elif stage_name == "Jobs Retrieved":
-                if stored_stats.get("jobs_retrieved", 0) > 0:
+                if is_currently_processing:
+                    status = "processing"
+                    detail = "Discovering matching positions across live sources & catalog..."
+                elif stored_stats.get("jobs_retrieved", 0) > 0:
                     status = "completed"
                     detail = f"{stored_stats.get('jobs_retrieved')} positions retrieved"
                 elif discovery_overview.total_jobs_analyzed > 0:
@@ -667,9 +691,12 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
                 if matches_list:
                     status = "completed"
                     detail = f"{len(matches_list)} roles matched (top score: {matches_list[0].score}%)"
+                elif is_currently_processing:
+                    status = "processing"
+                    detail = "Computing match scores..."
                 elif resume:
                     status = "not_started"
-                    detail = "Click 'Re-run analysis' to rank positions"
+                    detail = "Click 'Find Matching Jobs' to rank positions"
                 else:
                     status = "not_started"
                     detail = "Awaiting resume upload"

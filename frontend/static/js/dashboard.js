@@ -56,10 +56,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const retryBtn = document.getElementById('btnRetryMatching');
             if (retryBtn) {
-                retryBtn.addEventListener('click', () => {
+                retryBtn.onclick = () => {
                     clearError();
-                    if (matcherForm) matcherForm.requestSubmit();
-                });
+                    if (matcherForm && !isSubmitting) matcherForm.requestSubmit();
+                };
             }
         } else {
             alert(msg);
@@ -339,30 +339,37 @@ document.addEventListener('DOMContentLoaded', () => {
             if (res.ok) {
                 const data = await res.json();
 
-                // Dynamic progress display based on real backend pipeline stages
-                if (data.pipeline && Array.isArray(data.pipeline)) {
-                    const currentStage = data.pipeline.find(s => s.status === 'processing');
-                    if (currentStage) {
-                        if (aiProcessingTitle && currentStage.stage) {
-                            aiProcessingTitle.textContent = currentStage.stage.endsWith('...') ? currentStage.stage : `${currentStage.stage}...`;
-                        }
-                        if (aiProcessingSubtitle && currentStage.detail) {
-                            aiProcessingSubtitle.textContent = currentStage.detail;
-                        }
-                    }
-                }
-
-                // Check for completion or failure
-                if (!data.is_processing) {
+                // On transient polling errors reported by backend, preserve last known state and wait
+                if (data && data.transient_error) {
+                    // Do not update UI or treat as completion; fall through to bounded backoff
+                } else if (data && data.is_processing === false) {
+                    // Terminal state reached: pipeline completed or stopped
                     stopPolling();
+                    clearOverallTimeout();
+                    setButtonLoading(false);
+
                     if (data.last_error) {
                         hideProcessingState();
-                        setButtonLoading(false);
                         showError(data.last_error);
                     } else {
+                        // Mark completion in session storage to prevent auto-polling on reload
+                        sessionStorage.setItem('hireagent_matching_finished', 'true');
                         window.location.reload();
                     }
                     return;
+                } else if (data && data.is_processing === true) {
+                    // Dynamic progress display based on real backend pipeline stages
+                    if (data.pipeline && Array.isArray(data.pipeline)) {
+                        const currentStage = data.pipeline.find(s => s.status === 'processing');
+                        if (currentStage) {
+                            if (aiProcessingTitle && currentStage.stage) {
+                                aiProcessingTitle.textContent = currentStage.stage.endsWith('...') ? currentStage.stage : `${currentStage.stage}...`;
+                            }
+                            if (aiProcessingSubtitle && currentStage.detail) {
+                                aiProcessingSubtitle.textContent = currentStage.detail;
+                            }
+                        }
+                    }
                 }
             }
         } catch (e) {
@@ -387,7 +394,20 @@ document.addEventListener('DOMContentLoaded', () => {
         executePollStep();
     }
 
-    if (processingSection && !processingSection.classList.contains('d-none')) {
+    // Completion guard from previous reload
+    if (sessionStorage.getItem('hireagent_matching_finished') === 'true') {
+        sessionStorage.removeItem('hireagent_matching_finished');
+        hideProcessingState();
+        stopPolling();
+        setButtonLoading(false);
+    }
+
+    // If completed results are already visible in DOM, never start automatic polling
+    const hasCompletedResults = Boolean(resultsSection && !resultsSection.classList.contains('d-none'));
+    if (hasCompletedResults) {
+        hideProcessingState();
+        stopPolling();
+    } else if (processingSection && !processingSection.classList.contains('d-none')) {
         pollUntilFinished();
     }
 

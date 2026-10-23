@@ -1,3 +1,4 @@
+import os
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
@@ -15,8 +16,12 @@ from app.services.matching_service import (
 from app.services.dashboard_service import (
     assemble_dashboard_overview,
     get_user_state,
+    save_user_state,
+    invalidate_user_dashboard,
+    _get_user_cache_path,
     _USER_DASHBOARD_STATE,
-    _OVERVIEW_CACHE
+    _OVERVIEW_CACHE,
+    _ACTIVE_PIPELINE_USERS
 )
 
 def test_15_canonical_it_roles_coverage_and_discipline_isolation():
@@ -416,3 +421,330 @@ def test_application_and_search_url_generation():
     assert "search_url" in startup_job
     assert "https://www.google.com/search?q=" in startup_job["search_url"]
     assert "StartupX" in startup_job["search_url"]
+
+
+def test_polling_continues_to_report_completion_without_restarting_pipeline():
+    """
+    Regression Test 1:
+    Verifies that after matching completes, repeated polling requests to
+    assemble_dashboard_overview continue to report completion (is_processing=False)
+    and preserve matched jobs without re-running matching or re-initiating the pipeline.
+    """
+    mock_db = MagicMock()
+    user_id = 7001
+
+    mock_user = MagicMock()
+    mock_user.id = user_id
+
+    mock_resume = MagicMock()
+    mock_resume.id = 301
+    mock_resume.filename = "completed_resume.pdf"
+    mock_resume.updated_at = None
+    mock_resume.created_at = None
+    mock_resume.extracted_text = "Software Engineer experienced in Python, Django, REST APIs, and Docker."
+
+    mock_profile = MagicMock()
+    mock_profile.id = 10
+    mock_profile.user_id = user_id
+    mock_profile.target_role = "Software Engineer"
+    mock_profile.experience_level = "Mid"
+    mock_profile.work_mode_preference = "Remote"
+    mock_profile.employment_type = "Full-time"
+    mock_profile.preferred_locations = "[\"India\"]"
+    mock_profile.created_at = datetime.now(timezone.utc)
+    mock_profile.updated_at = datetime.now(timezone.utc)
+    mock_profile.skills = ["python", "django", "docker"]
+    mock_profile.min_match_score = 65.0
+
+    mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = mock_resume
+    mock_db.query.return_value.filter.return_value.first.return_value = mock_profile
+
+    # Completed matching state
+    _USER_DASHBOARD_STATE[user_id] = {
+        "is_processing": False,
+        "matching_completed": True,
+        "matched_resume_id": 301,
+        "matched_target_role": "Software Engineer",
+        "matches": [
+            {
+                "job_id": 101,
+                "job_title": "Software Engineer",
+                "company": "Alpha Corp",
+                "match_percentage": 90.0,
+                "matched_skills": ["python", "django"],
+                "missing_skills": ["kubernetes"],
+                "application_url": "https://example.com/alpha",
+                "source": "Catalog"
+            }
+        ],
+        "discovery_stats": {
+            "total_jobs_analyzed": 50,
+            "jobs_retrieved": 50,
+            "relevant_jobs": 1,
+            "matched_jobs": 1
+        }
+    }
+
+    with patch("app.services.dashboard_service.match_and_rank_jobs") as mock_match:
+        # Simulate 5 successive polling calls
+        for _ in range(5):
+            overview = assemble_dashboard_overview(mock_db, mock_user)
+            assert overview.is_processing is False
+            assert len(overview.matches) == 1
+            assert overview.matches[0].title == "Software Engineer"
+            matched_stage = next(s for s in overview.pipeline if s.stage == "Jobs Matched")
+            assert matched_stage.status == "completed"
+
+        # Matching algorithm must not have been executed during any of the polls
+        mock_match.assert_not_called()
+
+
+def test_dashboard_overview_request_does_not_restart_resume_analysis():
+    """
+    Regression Test 2:
+    Verifies that calling assemble_dashboard_overview when a resume exists but matching
+    has not been explicitly executed does NOT trigger catalog matching or resume parsing.
+    """
+    mock_db = MagicMock()
+    user_id = 7002
+
+    mock_user = MagicMock()
+    mock_user.id = user_id
+
+    mock_resume = MagicMock()
+    mock_resume.id = 302
+    mock_resume.filename = "unmatched_resume.pdf"
+    mock_resume.updated_at = None
+    mock_resume.created_at = None
+    mock_resume.extracted_text = "AI Engineer skilled in PyTorch, Python, and Large Language Models."
+
+    mock_profile = MagicMock()
+    mock_profile.id = 11
+    mock_profile.user_id = user_id
+    mock_profile.target_role = "AI Engineer"
+    mock_profile.experience_level = "Entry Level"
+    mock_profile.work_mode_preference = "Remote"
+    mock_profile.employment_type = "Full-time"
+    mock_profile.preferred_locations = "[\"India\"]"
+    mock_profile.created_at = datetime.now(timezone.utc)
+    mock_profile.updated_at = datetime.now(timezone.utc)
+    mock_profile.skills = ["python", "pytorch"]
+    mock_profile.min_match_score = 65.0
+
+    mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = mock_resume
+    mock_db.query.return_value.filter.return_value.first.return_value = mock_profile
+
+    # Clean unanalyzed state
+    _USER_DASHBOARD_STATE[user_id] = {
+        "is_processing": False,
+        "matching_completed": False,
+        "matched_resume_id": None,
+        "matched_target_role": None,
+        "matches": [],
+        "discovery_stats": {}
+    }
+
+    with patch("app.services.dashboard_service.match_and_rank_jobs") as mock_match:
+        overview = assemble_dashboard_overview(mock_db, mock_user)
+        # Overview must remain strictly read-only: zero matching calls
+        mock_match.assert_not_called()
+        assert overview.is_processing is False
+        assert overview.matches == []
+        matched_stage = next(s for s in overview.pipeline if s.stage == "Jobs Matched")
+        assert matched_stage.status == "not_started"
+
+
+def test_transient_polling_failure_handling_and_preservation():
+    """
+    Regression Test 3:
+    Verifies that Flask's /dashboard/poll route handles transient backend connection
+    timeouts by reporting transient_error=True and is_processing=False, rather than
+    falsely indicating active processing and triggering an unwanted reprocessing loop.
+    """
+    from frontend.app import app
+    app.config["TESTING"] = True
+    app.config["SECRET_KEY"] = "test_key"
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess["token"] = "valid_token"
+            sess["has_uploaded_resume"] = True
+            sess["active_resume_filename"] = "my_resume.pdf"
+
+        with patch("frontend.api_client.get_dashboard_overview", return_value=(None, "Connection error: Read timed out.")):
+            res = client.get("/dashboard/poll")
+            assert res.status_code == 200
+            data = res.get_json()
+            assert data["ok"] is False
+            assert data["transient_error"] is True
+            assert data["is_processing"] is False
+            assert data["resume"]["status"] == "ready"
+
+
+def test_page_initialization_does_not_automatically_trigger_find_jobs():
+    """
+    Regression Test 4:
+    Verifies that loading the dashboard page (/dashboard) and initializing status (/dashboard/poll)
+    does not trigger any POST rerun or pipeline execution.
+    """
+    from frontend.app import app
+    app.config["TESTING"] = True
+    app.config["SECRET_KEY"] = "test_key"
+
+    with app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess["token"] = "valid_token"
+            sess["has_uploaded_resume"] = True
+            sess["active_resume_filename"] = "my_resume.pdf"
+
+        mock_overview = {
+            "is_processing": False,
+            "resume": {"exists": True, "filename": "my_resume.pdf", "status": "ready"},
+            "profile": {"primary_role": "Software Engineer", "skills": ["python"]},
+            "discovery": {"total_jobs_analyzed": 50, "matched_jobs": 1},
+            "matches": [{"title": "Software Engineer", "company": "Tech Corp", "score": 90.0, "is_available": True}],
+            "pipeline": []
+        }
+
+        with patch("frontend.api_client.get_dashboard_overview", return_value=(mock_overview, None)), \
+             patch("frontend.api_client.get_user_resumes", return_value=([{"id": 1, "filename": "my_resume.pdf"}], None)), \
+             patch("frontend.api_client.get_user_profile", return_value=({"target_role": "Software Engineer"}, None)), \
+             patch("frontend.api_client.rerun_dashboard_pipeline") as mock_rerun:
+
+            res = client.get("/dashboard")
+            assert res.status_code == 200
+            # Ensure rerun_dashboard_pipeline was NEVER invoked during GET /dashboard
+            mock_rerun.assert_not_called()
+
+
+def test_replacing_resume_invalidates_stale_results():
+    """
+    Regression Test 5:
+    Verifies that when a resume is replaced (different resume ID), the previous resume's
+    cached matches are rejected and not returned for the new resume.
+    """
+    mock_db = MagicMock()
+    user_id = 7003
+
+    mock_user = MagicMock()
+    mock_user.id = user_id
+
+    # Existing completed matches for Resume 101
+    _USER_DASHBOARD_STATE[user_id] = {
+        "is_processing": False,
+        "matching_completed": True,
+        "matched_resume_id": 101,
+        "matched_target_role": "Backend Developer",
+        "matches": [{"job_id": 1, "job_title": "Backend Developer", "match_percentage": 95.0}],
+        "discovery_stats": {"matched_jobs": 1}
+    }
+
+    # Now the database returns Resume 102 (new upload)
+    mock_new_resume = MagicMock()
+    mock_new_resume.id = 102
+    mock_new_resume.filename = "new_resume.pdf"
+    mock_new_resume.updated_at = None
+    mock_new_resume.created_at = None
+    mock_new_resume.extracted_text = "Frontend Developer skilled in React, TypeScript, and CSS."
+
+    mock_profile = MagicMock()
+    mock_profile.id = 12
+    mock_profile.user_id = user_id
+    mock_profile.target_role = "Frontend Developer"
+    mock_profile.experience_level = "Mid"
+    mock_profile.work_mode_preference = "Remote"
+    mock_profile.employment_type = "Full-time"
+    mock_profile.preferred_locations = "[\"India\"]"
+    mock_profile.created_at = datetime.now(timezone.utc)
+    mock_profile.updated_at = datetime.now(timezone.utc)
+    mock_profile.skills = ["react", "typescript"]
+    mock_profile.min_match_score = 65.0
+
+    mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = mock_new_resume
+    mock_db.query.return_value.filter.return_value.first.return_value = mock_profile
+
+    # Calling assemble_dashboard_overview with new resume ID must not return Resume 101 matches
+    overview = assemble_dashboard_overview(mock_db, mock_user)
+    assert overview.matches == []
+    assert overview.resume.filename == "new_resume.pdf"
+
+
+def test_user_isolation_for_persisted_dashboard_state():
+    """
+    Regression Test 6:
+    Verifies that User A and User B have separate persisted states and cannot access each other's results.
+    """
+    user_a = 8001
+    user_b = 8002
+
+    # User A matches
+    _USER_DASHBOARD_STATE[user_a] = {
+        "is_processing": False,
+        "matching_completed": True,
+        "matched_resume_id": 501,
+        "matched_target_role": "Data Scientist",
+        "matches": [{"job_id": 501, "job_title": "Data Scientist A", "match_percentage": 92.0}],
+        "discovery_stats": {"matched_jobs": 1}
+    }
+    save_user_state(user_a)
+
+    # User B matches
+    _USER_DASHBOARD_STATE[user_b] = {
+        "is_processing": False,
+        "matching_completed": True,
+        "matched_resume_id": 502,
+        "matched_target_role": "DevOps Engineer",
+        "matches": [{"job_id": 502, "job_title": "DevOps Engineer B", "match_percentage": 88.0}],
+        "discovery_stats": {"matched_jobs": 1}
+    }
+    save_user_state(user_b)
+
+    # Wipe in-memory state
+    _USER_DASHBOARD_STATE.clear()
+
+    # Restore User A and User B
+    state_a = get_user_state(user_a)
+    state_b = get_user_state(user_b)
+
+    assert state_a["matches"][0]["job_title"] == "Data Scientist A"
+    assert state_b["matches"][0]["job_title"] == "DevOps Engineer B"
+    assert state_a["matched_target_role"] == "Data Scientist"
+    assert state_b["matched_target_role"] == "DevOps Engineer"
+
+    # Cleanup
+    invalidate_user_dashboard(user_a)
+    invalidate_user_dashboard(user_b)
+
+
+def test_state_persistence_survives_in_memory_wipe():
+    """
+    Regression Test 7:
+    Verifies that completed matching state persists to disk and is safely restored
+    when the in-memory cache is wiped (simulating a worker restart on Render Free).
+    """
+    user_id = 9001
+    _USER_DASHBOARD_STATE[user_id] = {
+        "is_processing": False,
+        "matching_completed": True,
+        "matched_resume_id": 777,
+        "matched_target_role": "Python Developer",
+        "matches": [{"job_id": 777, "job_title": "Python Developer", "match_percentage": 94.0}],
+        "discovery_stats": {"matched_jobs": 1, "jobs_retrieved": 50}
+    }
+    save_user_state(user_id)
+
+    # Simulate worker restart by wiping in-memory dictionary
+    _USER_DASHBOARD_STATE.clear()
+    assert user_id not in _USER_DASHBOARD_STATE
+
+    # Retrieve state again
+    restored = get_user_state(user_id)
+    assert restored["matching_completed"] is True
+    assert restored["matched_resume_id"] == 777
+    assert restored["matched_target_role"] == "Python Developer"
+    assert len(restored["matches"]) == 1
+    assert restored["matches"][0]["job_title"] == "Python Developer"
+
+    # Cleanup
+    invalidate_user_dashboard(user_id)
+    assert not os.path.exists(_get_user_cache_path(user_id))
