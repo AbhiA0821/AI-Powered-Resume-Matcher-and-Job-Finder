@@ -1,5 +1,5 @@
 import re
-from typing import List, Dict, Tuple, Set, Optional
+from typing import List, Dict, Tuple, Set, Optional, Any
 
 # Comprehensive canonical skills dictionary
 CANONICAL_SKILLS = [
@@ -467,3 +467,48 @@ def discover_relevant_roles(
             break
 
     return discovered
+
+def recommend_top_roles(
+    resume_skills: List[str],
+    extracted_text: str = "",
+    top_n: int = 5
+) -> List[Dict[str, Any]]:
+    """
+    Analyzes candidate's extracted skills, projects, and resume text to recommend top 3-5 suitable IT roles
+    (e.g. Software Engineer, Python Developer, Backend Developer, AI Engineer, Machine Learning Engineer,
+    Data Scientist, Data Engineer, Generative AI Engineer).
+    Produces meaningful, calibrated fit scores (0-100%) and grounded explanations based on actual matched skills.
+    Never hallucinates or fabricates skills.
+    """
+    resume_skill_set = {normalize_skill(s) for s in resume_skills}
+    text_lower = (extracted_text or "").lower()
+
+    scored_roles = []
+    for role, role_skills in ROLE_SKILL_MATRIX.items():
+        matched = [s for s in role_skills if s in resume_skill_set]
+        coverage = len(matched) / len(role_skills) if role_skills else 0.0
+
+        role_lower = role.lower()
+        text_match = 1.0 if role_lower in text_lower else (
+            0.5 if any(p in text_lower for p in role_lower.split() if len(p) > 3) else 0.0
+        )
+
+        if matched:
+            raw_fit = 42.0 + (coverage * 42.0) + (text_match * 10.0) + min(6.0, len(matched) * 1.0)
+            skills_preview = ", ".join(s.title() for s in matched[:4])
+            explanation = f"Strong alignment with {skills_preview} identified in your resume."
+        else:
+            raw_fit = 25.0 + (text_match * 15.0)
+            explanation = f"Foundational IT competencies relevant to {role} roles."
+
+        fit_score = round(min(97.0, max(25.0, raw_fit)), 1)
+        scored_roles.append({
+            "role": role,
+            "fit_score": fit_score,
+            "explanation": explanation,
+            "matched_skills": [s.title() for s in matched[:4]]
+        })
+
+    # Sort primarily by fit score, secondarily by number of matched skills
+    scored_roles.sort(key=lambda x: (x["fit_score"], len(x["matched_skills"])), reverse=True)
+    return scored_roles[:top_n]

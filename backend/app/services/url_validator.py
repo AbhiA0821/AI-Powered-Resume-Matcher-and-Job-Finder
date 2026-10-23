@@ -173,7 +173,7 @@ def validate_jobs_batch(jobs: List[Dict[str, Any]], max_to_validate: int = 10) -
         return job_copy
 
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(target_slice))) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(2, len(target_slice))) as executor:
             validated_top = list(executor.map(_validate_single, target_slice))
     except Exception as e:
         logger.warning(f"Batch URL validation error: {e}")

@@ -21,6 +21,11 @@ logger = logging.getLogger("hireagent.qdrant")
 def reset_qdrant_client():
     """Resets the singleton QdrantClient instance so broken or reset sockets are discarded."""
     global _qdrant_client_instance, _ENSURED_COLLECTIONS
+    if _qdrant_client_instance is not None:
+        try:
+            _qdrant_client_instance.close()
+        except Exception:
+            pass
     _qdrant_client_instance = None
     _ENSURED_COLLECTIONS.clear()
 

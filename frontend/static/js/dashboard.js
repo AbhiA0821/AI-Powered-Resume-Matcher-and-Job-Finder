@@ -433,4 +433,24 @@ document.addEventListener('DOMContentLoaded', () => {
             toggleSkillsBtn.setAttribute('aria-expanded', 'false');
         });
     }
+
+    // Recommended Role selection pill buttons
+    const rolePills = document.querySelectorAll('.role-pill-btn');
+    rolePills.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const selectedRole = btn.getAttribute('data-role');
+            if (selectedRole && prefTargetRole) {
+                prefTargetRole.value = selectedRole;
+                rolePills.forEach(p => p.classList.remove('active', 'border-accent', 'text-accent'));
+                btn.classList.add('active', 'border-accent', 'text-accent');
+                
+                const explanationEl = document.getElementById('recommendedRoleExplanation');
+                const expText = btn.getAttribute('data-explanation');
+                if (explanationEl && expText) {
+                    explanationEl.textContent = `Match rationale: ${expText}`;
+                }
+            }
+        });
+    });
 });

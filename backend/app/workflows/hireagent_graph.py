@@ -56,11 +56,8 @@ def retrieve_jobs_node(state: HireAgentState) -> Dict[str, Any]:
     def _fetch_single_rapidapi_role(role: str) -> List[Dict[str, Any]]:
         try:
             from app.services.job_sources.rapidapi_job_service import search_live_jobs, to_hireagent_job_dict
-            from app.services.job_indexing import index_live_jobs_in_qdrant
             live_normalized = search_live_jobs(query=role, location="India", num_pages=1)
             if live_normalized:
-                import threading
-                threading.Thread(target=index_live_jobs_in_qdrant, args=(live_normalized,), daemon=True).start()
                 return [to_hireagent_job_dict(norm_job, role_category=role) for norm_job in live_normalized]
         except Exception as e:
             logger.warning(f"RapidAPI retrieval for role '{role}' failed: {e}")
@@ -124,7 +121,7 @@ def retrieve_jobs_node(state: HireAgentState) -> Dict[str, Any]:
 
     # 3. SQLite job catalog (Static catalog / baseline fallback)
     try:
-        db_result = get_jobs_from_db(limit=100)
+        db_result = get_jobs_from_db(limit=40)
         for cat_job in db_result.get("jobs", []):
             cat_job_copy = dict(cat_job)
             cat_job_copy["source"] = cat_job.get("source") or "HireAgent Test Catalog"
@@ -185,17 +182,13 @@ def rag_enrichment_node(state: HireAgentState) -> Dict[str, Any]:
             logger.warning(f"RAG enrichment fallback for job {job.get('job_title')}: {e}")
             return job
 
-    # Enrich top 3 jobs concurrently with Gemini (primary) / Groq (fallback) RAG explanations
+    # Enrich top 3 jobs with Gemini (primary) / Groq (fallback) RAG explanations sequentially to prevent thread pool memory spikes
     top_candidates = ranked[:3]
     remaining_jobs = ranked[3:]
 
-    try:
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, len(top_candidates))) as executor:
-            enriched_top = list(executor.map(_enrich_single_job, top_candidates))
-    except Exception as e:
-        logger.warning(f"Parallel RAG enrichment fell back to sequential: {e}")
-        enriched_top = [_enrich_single_job(j) for j in top_candidates]
+    enriched_top = []
+    for j in top_candidates:
+        enriched_top.append(_enrich_single_job(j))
 
     return {"ranked_jobs": enriched_top + list(remaining_jobs)}
 

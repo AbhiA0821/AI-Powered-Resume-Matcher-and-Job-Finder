@@ -91,6 +91,15 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSION: int = 384
     FASTEMBED_CACHE_PATH: Optional[str] = os.path.join(ROOT_DIR, ".fastembed_cache")
 
+    @field_validator("FASTEMBED_CACHE_PATH", mode="before")
+    @classmethod
+    def assemble_fastembed_cache_path(cls, v: Optional[str]) -> Optional[str]:
+        if not v:
+            return os.path.join(ROOT_DIR, ".fastembed_cache")
+        if isinstance(v, str) and not os.path.isabs(v):
+            return os.path.abspath(os.path.join(ROOT_DIR, v))
+        return v
+
     # Qdrant Vector Collections
     QDRANT_RESUMES_COLLECTION: str = "hireagent_resumes"
     QDRANT_JOBS_COLLECTION: str = "hireagent_jobs"

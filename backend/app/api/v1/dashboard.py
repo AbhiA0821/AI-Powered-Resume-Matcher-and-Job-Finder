@@ -51,7 +51,7 @@ def rerun_analysis_endpoint(
     Explicitly re-runs the end-to-end matching and analysis pipeline for the current user's latest resume.
     Dispatches pipeline execution in background and returns processing state immediately for frontend polling.
     """
-    invalidate_user_dashboard(current_user.id)
+    invalidate_user_dashboard(current_user.id, clear_resume_data=False)
     target_role = payload.target_role if payload else None
     loc = payload.preferred_location if payload else None
     comp = payload.preferred_company if payload else None
@@ -71,10 +71,14 @@ def rerun_analysis_endpoint(
     else:
         # In production, dispatch asynchronously so endpoint returns immediately and client polls without timing out
         from app.services.dashboard_service import _ACTIVE_PIPELINE_USERS, _PIPELINE_LOCK
+        with _PIPELINE_LOCK:
+            if current_user.id in _ACTIVE_PIPELINE_USERS:
+                # A pipeline is ALREADY actively running for this user; return processing state without duplicate thread
+                return assemble_dashboard_overview(db=db, current_user=current_user)
+            _ACTIVE_PIPELINE_USERS.add(current_user.id)
+
         state = get_user_state(current_user.id)
         state["is_processing"] = True
-        with _PIPELINE_LOCK:
-            _ACTIVE_PIPELINE_USERS.add(current_user.id)
         import threading
         worker = threading.Thread(
             target=run_user_pipeline_sync,

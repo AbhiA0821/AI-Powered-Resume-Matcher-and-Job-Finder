@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict
 from pydantic import BaseModel, Field
 
 class ResumeOverview(BaseModel):
@@ -7,12 +7,19 @@ class ResumeOverview(BaseModel):
     uploaded_at: Optional[str] = None
     status: str = "none"  # "ready" | "processing" | "uploaded" | "none" | "needs_attention"
 
+class RecommendedRole(BaseModel):
+    role: str
+    fit_score: float
+    explanation: str
+    matched_skills: List[str] = Field(default_factory=list)
+
 class ProfileOverview(BaseModel):
     primary_role: Optional[str] = None
     experience_tier: Optional[str] = None
     skills: List[str] = Field(default_factory=list)
     skill_count: int = 0
     vector_index_status: str = "not_indexed"  # "indexed" | "pending" | "not_indexed"
+    recommended_roles: List[RecommendedRole] = Field(default_factory=list)
 
 class DiscoveryOverview(BaseModel):
     total_jobs_analyzed: int = 0
@@ -38,6 +45,7 @@ class MatchOverview(BaseModel):
     external_job_id: Optional[str] = None
     canonical_job_url: Optional[str] = None
     search_url: Optional[str] = None
+    platform_search_links: Dict[str, str] = Field(default_factory=dict)
     source: Optional[str] = "Catalog"
     is_available: bool = True
     is_direct: bool = True

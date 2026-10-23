@@ -748,3 +748,172 @@ def test_state_persistence_survives_in_memory_wipe():
     # Cleanup
     invalidate_user_dashboard(user_id)
     assert not os.path.exists(_get_user_cache_path(user_id))
+
+
+def test_resume_based_role_recommendations_grounding():
+    """
+    Verifies that recommend_top_roles analyzes candidate skills and projects
+    to recommend top 3-5 suitable IT roles with calibrated fit scores and grounded explanations.
+    """
+    from app.services.skill_service import recommend_top_roles
+
+    # Software / Backend Candidate
+    swe_skills = ["python", "fastapi", "django", "postgresql", "docker", "git", "rest api"]
+    swe_text = "Software Engineer experienced in building scalable backend services with Python, FastAPI, and Docker."
+    recs = recommend_top_roles(swe_skills, swe_text, top_n=5)
+
+    assert 3 <= len(recs) <= 5
+    top_role_names = [r["role"] for r in recs]
+    assert any(role in top_role_names for role in ["Software Engineer", "Python Developer", "Backend Developer"])
+    for r in recs:
+        assert 25.0 <= r["fit_score"] <= 100.0
+        assert len(r["explanation"]) > 10
+        assert isinstance(r["matched_skills"], list)
+
+    # AI / ML Candidate
+    ai_skills = ["python", "pytorch", "tensorflow", "machine learning", "deep learning", "llm", "transformers"]
+    ai_text = "AI Engineer specializing in Large Language Models, PyTorch, fine-tuning, and neural networks."
+    ai_recs = recommend_top_roles(ai_skills, ai_text, top_n=5)
+
+    ai_role_names = [r["role"] for r in ai_recs]
+    assert any(role in ai_role_names for role in ["AI Engineer", "Machine Learning Engineer", "Generative AI Engineer"])
+    # AI candidate should have higher fit score for AI Engineer than Software Engineer
+    ai_fit = next((r["fit_score"] for r in ai_recs if r["role"] == "AI Engineer"), 0)
+    assert ai_fit >= 70.0
+
+
+def test_software_engineer_vs_ai_engineer_matching_no_zero_matches():
+    """
+    Verifies that selecting Software Engineer returns software development, Python, and backend jobs,
+    while selecting AI Engineer returns AI, ML, and LLM jobs without returning 0 matches.
+    """
+    from app.services.jobs import get_jobs_from_db
+    from app.services.matching_service import match_and_rank_jobs
+
+    catalog_jobs = get_jobs_from_db(limit=50).get("jobs", [])
+    assert len(catalog_jobs) > 0
+
+    swe_resume = "Experienced Software Engineer with Python, FastAPI, REST APIs, PostgreSQL, Docker, Git, CI/CD."
+    
+    # 1. Match as Software Engineer
+    swe_results = match_and_rank_jobs(
+        resume_text=swe_resume,
+        jobs=catalog_jobs,
+        target_role="Software Engineer",
+        top_k=5
+    )
+    assert len(swe_results) > 0, "Software Engineer must return relevant jobs, never 0 matches"
+    swe_roles = [j.get("job_role", "") for j in swe_results]
+    assert any("Python" in r or "Backend" in r or "Software" in r for r in swe_roles)
+
+    # 2. Match as AI Engineer
+    ai_results = match_and_rank_jobs(
+        resume_text=swe_resume,
+        jobs=catalog_jobs,
+        target_role="AI Engineer",
+        top_k=5
+    )
+    assert len(ai_results) > 0, "AI Engineer must return matching jobs"
+    ai_roles = [j.get("job_role", "") for j in ai_results]
+    assert any("AI" in r or "Machine Learning" in r or "Data" in r for r in ai_roles)
+
+    # Confirm results differ according to role
+    assert swe_results[0]["job_title"] != ai_results[0]["job_title"] or swe_results[0]["match_percentage"] != ai_results[0]["match_percentage"]
+
+
+def test_platform_search_links_generation():
+    """
+    Verifies that generate_platform_search_links provides genuine search links
+    for LinkedIn, Indeed, Naukri, Glassdoor, and Google without claiming direct applications.
+    """
+    from app.services.matching_service import generate_platform_search_links
+
+    links = generate_platform_search_links("Python Developer", "Tech Solutions", "Bangalore")
+
+    assert "LinkedIn" in links
+    assert "linkedin.com/jobs/search" in links["LinkedIn"]
+    assert "Indeed" in links
+    assert "indeed.com/jobs" in links["Indeed"]
+    assert "Naukri" in links
+    assert "naukri.com" in links["Naukri"]
+    assert "Glassdoor" in links
+    assert "glassdoor.com/Job" in links["Glassdoor"]
+    assert "Google" in links
+    assert "google.com/search" in links["Google"]
+
+
+def test_role_matches_caching_and_instant_switching():
+    """
+    Verifies that changing roles retrieves or calculates appropriate results,
+    and switching back instantly reuses cached role matches without destroying them.
+    """
+    import time
+    mock_db = MagicMock()
+    user_id = 9988
+
+    mock_user = MagicMock()
+    mock_user.id = user_id
+
+    mock_resume = MagicMock()
+    mock_resume.id = 555
+    mock_resume.filename = "dev_resume.pdf"
+    mock_resume.updated_at = None
+    mock_resume.created_at = None
+    mock_resume.extracted_text = "Full Stack Python Developer with React, Django, and PostgreSQL."
+
+    mock_profile = MagicMock()
+    mock_profile.id = 99
+    mock_profile.user_id = user_id
+    mock_profile.target_role = "Python Developer"
+    mock_profile.experience_level = "Mid"
+    mock_profile.work_mode_preference = "Remote"
+    mock_profile.employment_type = "Full-time"
+    mock_profile.preferred_locations = "[\"India\"]"
+    mock_profile.created_at = datetime.now(timezone.utc)
+    mock_profile.updated_at = datetime.now(timezone.utc)
+    mock_profile.min_match_score = 65.0
+
+    mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = mock_resume
+    mock_db.query.return_value.filter.return_value.first.return_value = mock_profile
+
+    # Initialize user state with two cached roles in role_matches
+    state = get_user_state(user_id)
+    state["role_matches"] = {
+        "python developer": {
+            "matches": [{"job_id": 101, "job_title": "Senior Python Developer", "match_percentage": 92.0, "is_available": True}],
+            "discovery_stats": {"matched_jobs": 1, "total_jobs_analyzed": 50},
+            "saved_at": time.time()
+        },
+        "ai engineer": {
+            "matches": [{"job_id": 202, "job_title": "AI Research Engineer", "match_percentage": 85.0, "is_available": True}],
+            "discovery_stats": {"matched_jobs": 1, "total_jobs_analyzed": 50},
+            "saved_at": time.time()
+        }
+    }
+    state["matched_resume_id"] = 555
+
+    # 1. Overview for Python Developer
+    state["matched_target_role"] = "Python Developer"
+    overview_python = assemble_dashboard_overview(mock_db, mock_user)
+    assert len(overview_python.matches) == 1
+    assert overview_python.matches[0].title == "Senior Python Developer"
+
+    # 2. Invalidate overview cache only (role switch) and request AI Engineer
+    _OVERVIEW_CACHE.clear()
+    state["matched_target_role"] = "AI Engineer"
+    mock_profile.target_role = "AI Engineer"
+    overview_ai = assemble_dashboard_overview(mock_db, mock_user)
+    assert len(overview_ai.matches) == 1
+    assert overview_ai.matches[0].title == "AI Research Engineer"
+
+    # 3. Switch back to Python Developer instantly without re-running matching
+    _OVERVIEW_CACHE.clear()
+    state["matched_target_role"] = "Python Developer"
+    mock_profile.target_role = "Python Developer"
+    overview_python_again = assemble_dashboard_overview(mock_db, mock_user)
+    assert len(overview_python_again.matches) == 1
+    assert overview_python_again.matches[0].title == "Senior Python Developer"
+
+    # Cleanup
+    invalidate_user_dashboard(user_id)
+

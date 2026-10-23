@@ -55,6 +55,18 @@ _PIPELINE_LOCK = threading.Lock()
 # Assembled overview cache: keyed by (user_id, resume_id, resume_filename, resume_timestamp, pipeline_timestamp, is_processing, role_key)
 _OVERVIEW_CACHE: Dict[Tuple[int, Optional[int], Optional[str], Optional[str], Optional[float], bool, str], Tuple[float, DashboardOverviewResponse]] = {}
 OVERVIEW_CACHE_TTL_SECONDS = 30.0
+MAX_OVERVIEW_CACHE_SIZE = 50
+
+def _prune_overview_cache() -> None:
+    """Prunes expired and excess entries from _OVERVIEW_CACHE to prevent unbounded memory growth."""
+    now = time.time()
+    expired = [k for k, (t, _) in _OVERVIEW_CACHE.items() if now - t > OVERVIEW_CACHE_TTL_SECONDS]
+    for k in expired:
+        _OVERVIEW_CACHE.pop(k, None)
+    if len(_OVERVIEW_CACHE) > MAX_OVERVIEW_CACHE_SIZE:
+        oldest = sorted(_OVERVIEW_CACHE.keys(), key=lambda k: _OVERVIEW_CACHE[k][0])
+        for k in oldest[:len(_OVERVIEW_CACHE) - MAX_OVERVIEW_CACHE_SIZE]:
+            _OVERVIEW_CACHE.pop(k, None)
 
 def save_user_state(user_id: int) -> None:
     """Safely persists the user dashboard state to disk for restart and reload resilience."""
@@ -68,11 +80,16 @@ def save_user_state(user_id: int) -> None:
             "matching_completed": bool(state.get("matching_completed", False)),
             "matched_resume_id": state.get("matched_resume_id"),
             "matched_target_role": state.get("matched_target_role"),
+            "target_role": state.get("target_role"),
             "vector_indexed": bool(state.get("vector_indexed", False)),
             "matches": state.get("matches", []),
             "discovery_stats": state.get("discovery_stats", {}),
             "recommendations": state.get("recommendations"),
             "pipeline_stages": state.get("pipeline_stages", {}),
+            "role_matches": state.get("role_matches", {}),
+            "extracted_skills": state.get("extracted_skills", []),
+            "extracted_resume_id": state.get("extracted_resume_id"),
+            "missing_skills_dict": state.get("missing_skills_dict", {}),
             "last_pipeline_update": state.get("last_pipeline_update", time.time())
         }
         
@@ -84,27 +101,40 @@ def save_user_state(user_id: int) -> None:
     except Exception as e:
         logger.warning(f"Failed to persist dashboard state for user {user_id}: {e}")
 
-def invalidate_user_dashboard(user_id: int):
-    """Invalidates stored dashboard state, persistent cache file, and overview cache for a user."""
-    if user_id in _USER_DASHBOARD_STATE:
-        _USER_DASHBOARD_STATE.pop(user_id, None)
-    
-    try:
-        path = _get_user_cache_path(user_id)
-        if os.path.exists(path):
-            os.remove(path)
-    except Exception as e:
-        logger.debug(f"Could not remove persistent state cache for user {user_id}: {e}")
-
+def invalidate_user_dashboard(user_id: int, clear_resume_data: bool = True):
+    """Invalidates stored dashboard state, persistent cache file, and overview cache for a user.
+    If clear_resume_data is False, preserves parsed skills, embeddings, and role matches across role searches.
+    """
     # Invalidate overview cache for this user
     keys_to_remove = [k for k in _OVERVIEW_CACHE.keys() if k[0] == user_id]
     for k in keys_to_remove:
         _OVERVIEW_CACHE.pop(k, None)
 
+    if clear_resume_data:
+        if user_id in _USER_DASHBOARD_STATE:
+            _USER_DASHBOARD_STATE.pop(user_id, None)
+        try:
+            path = _get_user_cache_path(user_id)
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception as e:
+            logger.debug(f"Could not remove persistent state cache for user {user_id}: {e}")
+    else:
+        # Clear only active processing indicators and force overview refresh
+        if user_id in _USER_DASHBOARD_STATE:
+            _USER_DASHBOARD_STATE[user_id]["last_pipeline_update"] = time.time()
+
 def get_user_state(user_id: int) -> Dict[str, Any]:
     """Retrieves mutable in-memory state, falling back to persistent disk cache."""
     if user_id in _USER_DASHBOARD_STATE:
         return _USER_DASHBOARD_STATE[user_id]
+
+    if len(_USER_DASHBOARD_STATE) > 40:
+        # Prune inactive user states from memory (they remain safely preserved in disk JSON cache)
+        inactive = [u for u in _USER_DASHBOARD_STATE if u not in _ACTIVE_PIPELINE_USERS and u != user_id]
+        for u in inactive[:len(_USER_DASHBOARD_STATE) - 30]:
+            save_user_state(u)
+            _USER_DASHBOARD_STATE.pop(u, None)
     
     # Attempt restoring from persistent disk cache
     restored = None
@@ -126,11 +156,18 @@ def get_user_state(user_id: int) -> Dict[str, Any]:
             "matching_completed": False,
             "matched_resume_id": None,
             "matched_target_role": None,
+            "target_role": None,
             "vector_indexed": False,
             "pipeline_stages": {},
             "matches": [],
             "discovery_stats": {},
             "recommendations": None,
+            "role_matches": {},
+            "extracted_skills": [],
+            "extracted_resume_id": None,
+            "resume_embedding": None,
+            "embedded_resume_id": None,
+            "missing_skills_dict": {},
             "last_pipeline_update": time.time()
         }
     return _USER_DASHBOARD_STATE[user_id]
@@ -200,7 +237,25 @@ def run_user_pipeline_sync(
 
         # 3. Skills Extracted & Multi-Role Discovery
         from app.services.skill_service import normalize_role
-        extracted_skills = extract_skills(text)
+        if state.get("extracted_resume_id") == resume_id and state.get("extracted_skills"):
+            extracted_skills = state["extracted_skills"]
+        else:
+            extracted_skills = extract_skills(text)
+            state["extracted_skills"] = extracted_skills
+            state["extracted_resume_id"] = resume_id
+
+        # Resume embedding caching across searches
+        if state.get("embedded_resume_id") == resume_id and state.get("resume_embedding"):
+            resume_emb = state["resume_embedding"]
+        else:
+            from app.services.embeddings import embed_text
+            try:
+                resume_emb = embed_text(text[:2000] if len(text) > 2000 else text)
+            except Exception:
+                resume_emb = []
+            state["resume_embedding"] = resume_emb
+            state["embedded_resume_id"] = resume_id
+
         primary_detected = detect_candidate_role(extracted_skills, text)
         detected_role = normalize_role(target_role_override) if (target_role_override and target_role_override.strip()) else primary_detected
         discovered_roles = discover_relevant_roles(
@@ -216,9 +271,17 @@ def run_user_pipeline_sync(
             role_tracks_str = ", ".join(discovered_roles)
             set_pipeline_stage(user_id, "Skills Extracted", "completed", f"{len(extracted_skills)} technical skills identified ({len(discovered_roles)} role tracks: {role_tracks_str})")
 
-        # Update user profile in DB with detected or explicitly selected target role
+        # Update or create user profile in DB with detected or explicitly selected target role
         profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
-        if profile:
+        if not profile:
+            profile = UserProfile(
+                user_id=user_id,
+                target_role=detected_role
+            )
+            db.add(profile)
+            db.commit()
+            db.refresh(profile)
+        else:
             if target_role_override and target_role_override.strip():
                 profile.target_role = detected_role
             elif not profile.target_role:
@@ -283,7 +346,8 @@ def run_user_pipeline_sync(
             target_role=detected_role,
             relevant_roles=discovered_roles,
             top_k=10,
-            filter_unrelated_roles=True
+            filter_unrelated_roles=True,
+            resume_embedding=resume_emb
         )
         t_match = time.time() - t_m_start
 
@@ -362,6 +426,23 @@ def run_user_pipeline_sync(
         state["matched_target_role"] = detected_role
         state["target_role"] = detected_role
 
+        # Cache role results in state["role_matches"] with max 3 roles to bound memory
+        role_key = (detected_role or "").lower().strip()
+        if "role_matches" not in state or not isinstance(state["role_matches"], dict):
+            state["role_matches"] = {}
+        if len(state["role_matches"]) >= 3 and role_key not in state["role_matches"]:
+            oldest_role = min(state["role_matches"].keys(), key=lambda k: state["role_matches"][k].get("saved_at", 0))
+            state["role_matches"].pop(oldest_role, None)
+
+        state["role_matches"][role_key] = {
+            "matches": state["matches"],
+            "discovery_stats": state["discovery_stats"],
+            "matched_target_role": detected_role,
+            "missing_skills_dict": state.get("missing_skills_dict", {}),
+            "recommendations": state.get("recommendations"),
+            "saved_at": time.time()
+        }
+
         t_total = time.time() - t_pipeline_start
         log_memory_checkpoint("pipeline:complete", f"user={user_id} total_time={t_total:.2f}s")
         logger.info(
@@ -383,6 +464,8 @@ def run_user_pipeline_sync(
             state["matched_target_role"] = detected_role
         state["last_pipeline_update"] = time.time()
         save_user_state(user_id)
+        jobs = None
+        ranked_jobs = None
         if close_db_on_exit and db is not None:
             try:
                 db.close()
@@ -411,8 +494,8 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
     # Determine profile, skills, and target role before cache lookup
     profile = get_or_create_user_profile(db, current_user)
     resume_text = resume.extracted_text if resume else ""
-    skills = extract_skills(resume_text) if resume_text else []
-    primary_role = profile.target_role or (detect_candidate_role(skills, resume_text) if skills else "Software Engineer")
+    skills = (user_state.get("extracted_skills") if (resume and user_state.get("extracted_resume_id") == resume_id) else []) or (extract_skills(resume_text) if (resume and resume_text) else [])
+    primary_role = user_state.get("matched_target_role") or profile.target_role or (detect_candidate_role(skills, resume_text) if skills else "Software Engineer")
     role_key = (primary_role or "").lower().strip()
 
     # Check cache (strictly isolated per user, resume, timestamp, processing state, and role)
@@ -423,12 +506,24 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
         if now - cached_time < OVERVIEW_CACHE_TTL_SECONDS:
             return cached_overview
 
-    # Invalidate stored matches if stored matches are for a different role, resume, or model
-    stored_matches_role = user_state.get("matched_target_role")
-    if stored_matches_role and role_key and stored_matches_role.lower().strip() != role_key:
-        user_state["matches"] = []
-        user_state["discovery_stats"] = {}
-        user_state["matching_completed"] = False
+    # Restore cached matches for this role if available in role_matches
+    if role_key in user_state.get("role_matches", {}):
+        cached_role_data = user_state["role_matches"][role_key]
+        user_state["matches"] = cached_role_data.get("matches", [])
+        user_state["discovery_stats"] = cached_role_data.get("discovery_stats", {})
+        if "missing_skills_dict" in cached_role_data:
+            user_state["missing_skills_dict"] = cached_role_data["missing_skills_dict"]
+        if "recommendations" in cached_role_data:
+            user_state["recommendations"] = cached_role_data["recommendations"]
+        user_state["matched_target_role"] = primary_role
+        user_state["matching_completed"] = True
+    else:
+        # Invalidate stored matches if stored matches are for a different role, resume, or model
+        stored_matches_role = user_state.get("matched_target_role")
+        if stored_matches_role and role_key and stored_matches_role.lower().strip() != role_key:
+            user_state["matches"] = []
+            user_state["discovery_stats"] = {}
+            user_state["matching_completed"] = False
 
     stored_resume_id = user_state.get("matched_resume_id")
     stored_resume_name = user_state.get("resume_name")
@@ -442,7 +537,7 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
             user_state["pipeline_stages"] = {}
 
     stored_model = user_state.get("matched_model_version")
-    if stored_model and stored_model != get_configured_model_name():
+    if stored_model and stored_model != settings.EMBEDDING_MODEL:
         user_state["matches"] = []
         user_state["discovery_stats"] = {}
         user_state["matching_completed"] = False
@@ -475,12 +570,26 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
         else:
             v_status = "ready"
 
+    from app.services.skill_service import recommend_top_roles
+    from app.schemas.dashboard import RecommendedRole
+    rec_roles_data = recommend_top_roles(skills, resume_text, top_n=5)
+    rec_role_objects = [
+        RecommendedRole(
+            role=r["role"],
+            fit_score=r["fit_score"],
+            explanation=r["explanation"],
+            matched_skills=r["matched_skills"]
+        )
+        for r in rec_roles_data
+    ]
+
     profile_overview = ProfileOverview(
         primary_role=primary_role,
         experience_tier=experience_tier,
         skills=skills,
         skill_count=len(skills),
-        vector_index_status=v_status
+        vector_index_status=v_status,
+        recommended_roles=rec_role_objects
     )
 
     # --- Discovery & Matches ---
@@ -524,6 +633,7 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
             is_avail = bool(m.get("source_type") != "static_catalog" and raw_apply and raw_apply != "Application link unavailable")
         clean_apply = raw_apply if (is_avail and raw_apply != "Application link unavailable") else "Application link unavailable"
 
+        platform_search_links = m.get("platform_search_links") or {}
         matches_list.append(MatchOverview(
             job_id=raw_jid,
             title=m.get("job_title", "Software Engineer"),
@@ -542,7 +652,8 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
             is_available=bool(is_avail),
             is_direct=bool(m.get("is_direct", True)),
             url_status=m.get("url_status") or ("active" if is_avail else "unavailable"),
-            search_url=m.get("search_url")
+            search_url=m.get("search_url"),
+            platform_search_links=platform_search_links
         ))
 
     # --- Skill Gap ---
@@ -665,7 +776,7 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
                     status = "not_started"
                     detail = "Awaiting resume upload"
             elif stage_name == "Skills Extracted":
-                if skills:
+                if resume and skills:
                     status = "completed"
                     detail = f"{len(skills)} skills identified"
                 elif resume:
@@ -737,6 +848,7 @@ def assemble_dashboard_overview(db: Session, current_user: User) -> DashboardOve
         pipeline=pipeline_list
     )
 
-    # Save to overview cache
+    # Save to overview cache with bounded eviction
+    _prune_overview_cache()
     _OVERVIEW_CACHE[cache_key] = (now, response)
     return response

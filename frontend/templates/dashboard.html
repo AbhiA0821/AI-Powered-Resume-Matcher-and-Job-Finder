@@ -95,6 +95,33 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- RECOMMENDED ROLES SECTION -->
+                {% if overview.profile and overview.profile.recommended_roles %}
+                <div class="mt-3">
+                    <label class="form-label fs-8 text-secondary d-flex align-items-center justify-content-between mb-2">
+                        <span>RECOMMENDED ROLES FROM YOUR RESUME</span>
+                        <span class="text-muted fs-8">Click to select role</span>
+                    </label>
+                    <div class="d-flex flex-wrap gap-2" id="recommendedRolesList">
+                        {% for rec in overview.profile.recommended_roles %}
+                        <button type="button" 
+                                class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-2 py-1 px-3 rounded-pill role-pill-btn {% if (profile.target_role or overview.profile.primary_role or '').lower() == rec.role.lower() %}border-accent text-accent{% endif %}"
+                                data-role="{{ rec.role }}"
+                                data-explanation="{{ rec.explanation }}"
+                                title="{{ rec.explanation }} (Fit: {{ rec.fit_score }}%)">
+                            <span class="fw-semibold text-white">{{ rec.role }}</span>
+                            <span class="badge bg-secondary bg-opacity-50 text-white font-mono fs-8">{{ rec.fit_score }}%</span>
+                        </button>
+                        {% endfor %}
+                    </div>
+                    <div id="recommendedRoleExplanation" class="text-muted fs-8 mt-2 fst-italic">
+                        {% if overview.profile.recommended_roles[0] %}
+                        Match rationale: {{ overview.profile.recommended_roles[0].explanation }}
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
             </div>
 
             <!-- SECTION 3: CTA SUBMIT BUTTON -->
@@ -296,9 +323,31 @@
                             {% endif %}
                         </a>
                         {% else %}
-                        <div class="d-inline-flex align-items-center gap-2">
+                        <div class="d-inline-flex align-items-center gap-2 flex-wrap justify-content-end">
                             <span class="badge badge-surface text-secondary fs-8">Posting unavailable</span>
-                            {% if job.search_url %}
+                            {% if job.platform_search_links %}
+                            <div class="dropdown d-inline-block">
+                                <button class="btn btn-sm btn-ha-secondary dropdown-toggle fs-8 py-1" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    Search Platforms
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end shadow">
+                                    {% if job.platform_search_links.get('LinkedIn') %}
+                                    <li><a class="dropdown-item fs-8" href="{{ job.platform_search_links.get('LinkedIn') }}" target="_blank" rel="noopener noreferrer">Search on LinkedIn &rarr;</a></li>
+                                    {% endif %}
+                                    {% if job.platform_search_links.get('Indeed') %}
+                                    <li><a class="dropdown-item fs-8" href="{{ job.platform_search_links.get('Indeed') }}" target="_blank" rel="noopener noreferrer">Search on Indeed &rarr;</a></li>
+                                    {% endif %}
+                                    {% if job.platform_search_links.get('Naukri') %}
+                                    <li><a class="dropdown-item fs-8" href="{{ job.platform_search_links.get('Naukri') }}" target="_blank" rel="noopener noreferrer">Search on Naukri &rarr;</a></li>
+                                    {% endif %}
+                                    {% if job.platform_search_links.get('Glassdoor') %}
+                                    <li><a class="dropdown-item fs-8" href="{{ job.platform_search_links.get('Glassdoor') }}" target="_blank" rel="noopener noreferrer">Search on Glassdoor &rarr;</a></li>
+                                    {% endif %}
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li><a class="dropdown-item fs-8" href="{{ job.search_url or job.platform_search_links.get('Google') }}" target="_blank" rel="noopener noreferrer">Search on Google &rarr;</a></li>
+                                </ul>
+                            </div>
+                            {% elif job.search_url %}
                             <a href="{{ job.search_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ha-secondary d-inline-flex align-items-center gap-1" title="Search for this opportunity on Google">
                                 <span>Search Job →</span>
                             </a>
@@ -322,6 +371,24 @@
             <p class="ha-empty-state-desc mb-3">
                 No active listings currently exceed the matching threshold for your skills and criteria. You can adjust your target role or location preferences above and try again.
             </p>
+            {% set active_role = profile.target_role or overview.profile.primary_role or 'Software Engineer' %}
+            <div class="mb-4">
+                <span class="text-secondary fs-8 d-block mb-2">Search live opportunities for <strong>{{ active_role }}</strong> on leading IT platforms:</span>
+                <div class="d-flex flex-wrap align-items-center justify-content-center gap-2">
+                    <a href="https://www.linkedin.com/jobs/search/?keywords={{ active_role | urlencode }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ha-secondary fs-8">
+                        LinkedIn Jobs &rarr;
+                    </a>
+                    <a href="https://www.indeed.com/jobs?q={{ active_role | urlencode }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ha-secondary fs-8">
+                        Indeed Jobs &rarr;
+                    </a>
+                    <a href="https://www.naukri.com/{{ active_role | lower | replace(' ', '-') }}-jobs" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ha-secondary fs-8">
+                        Naukri Jobs &rarr;
+                    </a>
+                    <a href="https://www.glassdoor.com/Job/jobs.htm?sc.keyword={{ active_role | urlencode }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ha-secondary fs-8">
+                        Glassdoor Jobs &rarr;
+                    </a>
+                </div>
+            </div>
             <div class="d-flex align-items-center justify-content-center gap-2">
                 <a href="{{ url_for('jobs') }}" class="btn btn-ha-secondary">
                     Browse All Catalog Jobs

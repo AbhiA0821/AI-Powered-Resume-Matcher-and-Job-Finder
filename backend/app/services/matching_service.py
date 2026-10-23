@@ -19,11 +19,11 @@ from app.services.embeddings import embed_text, embed_texts
 
 logger = logging.getLogger("hireagent.matching")
 
-# In-memory LRU-style cache for job embeddings to eliminate repeated transformer calls
+# In-memory bounded cache for job embeddings to eliminate repeated transformer calls
 _JOB_EMBEDDINGS_MODEL: str = settings.EMBEDDING_MODEL
 _JOB_EMBEDDINGS_CACHE: Dict[str, List[float]] = {}
 _JOB_CACHE_LOCK = threading.Lock()
-MAX_JOB_CACHE_SIZE = 5000
+MAX_JOB_CACHE_SIZE = 500
 
 class HybridKNNMatcher:
     """Encapsulates the TF-IDF cosine distance matching logic from matcher.py.
@@ -179,6 +179,27 @@ def generate_deterministic_recommendation(
             f"Strong candidate for direct application."
         )
 
+def generate_platform_search_links(job_title: str, company: str, location: str = "") -> Dict[str, str]:
+    """Generates clearly labeled, role-specific search links to LinkedIn, Indeed, Naukri, Glassdoor, and Google.
+    Never presents a search link as a direct application link.
+    """
+    import urllib.parse
+    loc_clean = location.strip() if location and location.lower() not in ("remote", "any", "none", "india") else ""
+    loc_part = f" {loc_clean}" if loc_clean else ""
+    query_clean = f"{job_title} {company}".strip()
+    loc_query = f"{query_clean}{loc_part}".strip()
+
+    encoded_query = urllib.parse.quote_plus(loc_query)
+    naukri_role = urllib.parse.quote_plus(job_title.lower().replace(" ", "-"))
+
+    return {
+        "LinkedIn": f"https://www.linkedin.com/jobs/search/?keywords={encoded_query}",
+        "Indeed": f"https://www.indeed.com/jobs?q={encoded_query}",
+        "Naukri": f"https://www.naukri.com/{naukri_role}-jobs",
+        "Glassdoor": f"https://www.glassdoor.com/Job/jobs.htm?sc.keyword={encoded_query}",
+        "Google": f"https://www.google.com/search?q={urllib.parse.quote_plus(loc_query + ' jobs')}"
+    }
+
 def match_and_rank_jobs(
     resume_text: str,
     jobs: List[Dict[str, Any]],
@@ -186,7 +207,8 @@ def match_and_rank_jobs(
     candidate_exp: Optional[str] = None,
     top_k: int = 10,
     relevant_roles: Optional[List[str]] = None,
-    filter_unrelated_roles: bool = False
+    filter_unrelated_roles: bool = False,
+    resume_embedding: Optional[List[float]] = None
 ) -> List[Dict[str, Any]]:
     """Performs hybrid job matching across candidate jobs and ranks the Top K results.
     
@@ -230,13 +252,14 @@ def match_and_rank_jobs(
         return []
 
     role_filtered.sort(key=lambda x: x[0], reverse=True)
-    candidate_jobs = [j for _, j in role_filtered[:50]]
+    candidate_jobs = [j for _, j in role_filtered[:35]]
 
-    # 2. Pre-generate resume embedding once for efficiency
-    try:
-        resume_embedding = embed_text(resume_text[:2000] if len(resume_text) > 2000 else resume_text)
-    except Exception:
-        resume_embedding = []
+    # 2. Pre-generate or reuse resume embedding for efficiency
+    if not resume_embedding:
+        try:
+            resume_embedding = embed_text(resume_text[:2000] if len(resume_text) > 2000 else resume_text)
+        except Exception:
+            resume_embedding = []
 
     # 3. Initialize TF-IDF/KNN matcher with shortlisted candidate jobs
     knn_matcher = HybridKNNMatcher()
@@ -271,10 +294,13 @@ def match_and_rank_jobs(
             try:
                 new_vectors = embed_texts(uncached_texts)
                 with _JOB_CACHE_LOCK:
+                    if len(_JOB_EMBEDDINGS_CACHE) >= MAX_JOB_CACHE_SIZE:
+                        keys_to_prune = list(_JOB_EMBEDDINGS_CACHE.keys())[:int(MAX_JOB_CACHE_SIZE * 0.25)]
+                        for k in keys_to_prune:
+                            _JOB_EMBEDDINGS_CACHE.pop(k, None)
                     for pos, vec in zip(uncached_indices, new_vectors):
                         temp_embeddings[pos] = vec
-                        if len(_JOB_EMBEDDINGS_CACHE) < MAX_JOB_CACHE_SIZE:
-                            _JOB_EMBEDDINGS_CACHE[job_summary_texts[pos]] = vec
+                        _JOB_EMBEDDINGS_CACHE[job_summary_texts[pos]] = vec
             except Exception as e:
                 logger.warning(f"Batch embedding failed for {len(uncached_texts)} jobs: {e}")
 
@@ -341,9 +367,9 @@ def match_and_rank_jobs(
         if is_avail is None:
             is_avail = bool(app_url and str(app_url).strip().startswith(("http://", "https://")) and app_url != "Application link unavailable" and job.get("source_type") != "static_catalog")
 
-        import urllib.parse
-        search_query = f"{job_title} {company} jobs"
-        search_url = f"https://www.google.com/search?q={urllib.parse.quote_plus(search_query)}"
+        loc = job.get("location") or "India"
+        platform_search_links = generate_platform_search_links(job_title, company, loc)
+        search_url = platform_search_links.get("Google") or f"https://www.google.com/search?q={urllib.parse.quote_plus(job_title + ' ' + company + ' jobs')}"
 
         scored_jobs.append({
             "id": job.get("id") or (int(ext_id) if ext_id.isdigit() else job_id),
@@ -351,6 +377,7 @@ def match_and_rank_jobs(
             "external_job_id": ext_id,
             "job_title": job_title,
             "company": company,
+            "job_role": job_role,
             "match_percentage": final_pct,
             "matched_skills": matched_skills,
             "missing_skills": missing_skills,
@@ -361,9 +388,10 @@ def match_and_rank_jobs(
             "apply_url": app_url,
             "canonical_job_url": canon_url,
             "search_url": search_url,
+            "platform_search_links": platform_search_links,
             "source": job.get("source") or "HireAgent Test Catalog",
             "source_type": job.get("source_type") or "static_catalog",
-            "location": job.get("location") or "India",
+            "location": loc,
             "posted_at": job.get("posted_at"),
             "is_available": bool(is_avail),
             "is_direct": bool(job.get("is_direct", True)),
@@ -376,6 +404,16 @@ def match_and_rank_jobs(
     elapsed = time.time() - t_start
     log_memory_checkpoint("matching:complete", f"ranked={len(result)}")
     logger.info(f"[TIMING] match_and_rank_jobs: processed {len(jobs)} candidates (shortlist: {len(candidate_jobs)}) in {elapsed:.3f}s -> {len(result)} ranked")
+    
+    # Release temporary scoring structures
+    del scored_jobs
+    del candidate_jobs
+    del role_filtered
+    del job_embeddings
+    del job_summary_texts
+    import gc
+    gc.collect()
+
     return result
 
 def apply_employer_diversity(

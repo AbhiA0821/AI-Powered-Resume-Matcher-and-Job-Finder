@@ -48,6 +48,8 @@ def save_and_create_resume(
     with open(file_path, "wb") as f:
         f.write(content)
 
+    del content
+
     extracted_text = extract_resume_text(file_path)
     if not extracted_text or not extracted_text.strip():
         if os.path.exists(file_path):
@@ -122,11 +124,15 @@ def save_and_create_resume(
     try:
         from app.services.dashboard_service import invalidate_user_dashboard, set_pipeline_stage, get_user_state, _ACTIVE_PIPELINE_USERS, _PIPELINE_LOCK
         invalidate_user_dashboard(user.id)
-        # Mark user as actively processing immediately so polling requests never trigger concurrent duplicate inference
+        
+        with _PIPELINE_LOCK:
+            if user.id in _ACTIVE_PIPELINE_USERS:
+                logger.info(f"Pipeline already running for user {user.id}; skipping duplicate worker dispatch.")
+                return resume
+            _ACTIVE_PIPELINE_USERS.add(user.id)
+
         user_st = get_user_state(user.id)
         user_st["is_processing"] = True
-        with _PIPELINE_LOCK:
-            _ACTIVE_PIPELINE_USERS.add(user.id)
 
         set_pipeline_stage(user.id, "Resume Uploaded", "completed", f"{resume.filename} uploaded")
         words = len(extracted_text.split())

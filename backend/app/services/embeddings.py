@@ -29,7 +29,7 @@ _cache_lock = threading.Lock()
 _model_instance = None
 _current_loaded_model: Optional[str] = None
 _EMBED_CACHE: dict = {}
-MAX_EMBED_CACHE_SIZE = 2000
+MAX_EMBED_CACHE_SIZE = 250
 
 def get_embedding_model():
     """Lazily initializes and returns the embedding model singleton in a thread-safe manner.
@@ -68,21 +68,8 @@ def get_embedding_model():
                     logger.info(f"Loaded FastEmbed ONNX embedding model singleton: {target_model}")
                     log_memory_checkpoint("model_init:complete", f"loaded={target_model}")
                 except Exception as fe_err:
-                    logger.warning(f"FastEmbed initialization notice for {target_model}: {fe_err}. Checking guarded fallback.")
-                    try:
-                        from sentence_transformers import SentenceTransformer
-                        try:
-                            _model_instance = SentenceTransformer(target_model, local_files_only=True, device="cpu")
-                        except Exception:
-                            _model_instance = SentenceTransformer(target_model, device="cpu")
-                        _current_loaded_model = target_model
-                        with _cache_lock:
-                            _EMBED_CACHE.clear()
-                        logger.info(f"Loaded SentenceTransformer fallback model: {target_model}")
-                        log_memory_checkpoint("model_init:fallback_complete", f"loaded={target_model}")
-                    except Exception as st_err:
-                        logger.error(f"Failed to load embedding model: {st_err}")
-                        raise RuntimeError(f"Embedding model unavailable: {st_err}")
+                    logger.error(f"Failed to load FastEmbed ONNX embedding model {target_model}: {fe_err}")
+                    raise RuntimeError(f"Embedding model unavailable: {fe_err}")
     return _model_instance
 
 def _validate_single_text(text: str, arg_name: str = "text") -> str:
@@ -138,7 +125,7 @@ def embed_text(text: str) -> List[float]:
     # Serialize inference execution to prevent concurrent memory spikes on 512MB limit
     with _inference_lock:
         if hasattr(model, "embed"):
-            raw_embedding = next(iter(model.embed([valid_text])))
+            raw_embedding = next(iter(model.embed([valid_text], batch_size=1)))
             vector = [float(x) for x in raw_embedding.tolist()]
         else:
             raw_embedding = model.encode(valid_text, normalize_embeddings=True, convert_to_numpy=True)
@@ -147,8 +134,12 @@ def embed_text(text: str) -> List[float]:
     validated = _validate_vector_output(vector)
     
     with _cache_lock:
-        if len(_EMBED_CACHE) < MAX_EMBED_CACHE_SIZE:
-            _EMBED_CACHE[valid_text] = validated
+        if len(_EMBED_CACHE) >= MAX_EMBED_CACHE_SIZE:
+            # Prune oldest entries to prevent unbounded memory retention
+            keys_to_prune = list(_EMBED_CACHE.keys())[:int(MAX_EMBED_CACHE_SIZE * 0.25)]
+            for k in keys_to_prune:
+                _EMBED_CACHE.pop(k, None)
+        _EMBED_CACHE[valid_text] = validated
     return validated
 
 def embed_texts(texts: List[str]) -> List[List[float]]:
@@ -167,17 +158,21 @@ def embed_texts(texts: List[str]) -> List[List[float]]:
     
     output_vectors: List[List[float]] = []
     
-    # Serialize batch inference to avoid concurrent memory spikes
+    # Serialize batch inference with bounded ONNX batch sizes to avoid memory spikes
     with _inference_lock:
         if hasattr(model, "embed"):
-            raw_embeddings = list(model.embed(texts))
-            for raw_vec in raw_embeddings:
+            # Stream directly from generator in bounded batch sizes (16) rather than accumulating in list
+            for raw_vec in model.embed(texts, batch_size=16):
                 vector = [float(x) for x in raw_vec.tolist()]
                 output_vectors.append(_validate_vector_output(vector))
         else:
-            raw_embeddings = model.encode(texts, normalize_embeddings=True, convert_to_numpy=True)
+            raw_embeddings = model.encode(texts, normalize_embeddings=True, convert_to_numpy=True, batch_size=16)
             for raw_vec in raw_embeddings:
                 vector = [float(x) for x in raw_vec.tolist()]
                 output_vectors.append(_validate_vector_output(vector))
         
+    if len(texts) > 10:
+        import gc
+        gc.collect()
+
     return output_vectors

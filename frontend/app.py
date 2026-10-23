@@ -271,7 +271,8 @@ def dashboard():
                 "primary_role": profile.get("target_role") if isinstance(profile, dict) else getattr(profile, "target_role", None),
                 "experience_tier": profile.get("experience_level") if isinstance(profile, dict) else getattr(profile, "experience_level", None),
                 "skills": profile.get("skills", []) if isinstance(profile, dict) else [],
-                "skill_count": len(profile.get("skills", [])) if isinstance(profile, dict) else 0
+                "skill_count": len(profile.get("skills", [])) if isinstance(profile, dict) else 0,
+                "recommended_roles": []
             },
             "discovery": {
                 "total_jobs_analyzed": 0,
