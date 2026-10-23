@@ -67,31 +67,22 @@ def retrieve_jobs_node(state: HireAgentState) -> Dict[str, Any]:
         return []
 
     def _fetch_rapidapi() -> List[Dict[str, Any]]:
-        # Search target role and other discovered relevant roles (bounded at 3 roles maximum)
-        roles_to_fetch = relevant_roles[:3] if relevant_roles else [target_role]
-        results: List[Dict[str, Any]] = []
-        if len(roles_to_fetch) == 1:
-            return _fetch_single_rapidapi_role(roles_to_fetch[0])
-
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(roles_to_fetch), 3)) as executor:
-            future_to_role = {executor.submit(_fetch_single_rapidapi_role, r): r for r in roles_to_fetch}
-            for f in concurrent.futures.as_completed(future_to_role):
-                role_name = future_to_role[f]
-                try:
-                    res = f.result(timeout=5.0)
-                    if res:
-                        results.extend(res)
-                except Exception as e:
-                    logger.warning(f"RapidAPI query for role '{role_name}' timed out or failed: {e}")
+        # Requirement: Use role-specific external search queries for target_role
+        results: List[Dict[str, Any]] = _fetch_single_rapidapi_role(target_role)
+        # If no results returned for target_role, try bounded alternative role query if available
+        if not results and relevant_roles:
+            alt_roles = [r for r in relevant_roles if r.lower() != target_role.lower()]
+            if alt_roles:
+                alt_results = _fetch_single_rapidapi_role(alt_roles[0])
+                if alt_results:
+                    results.extend(alt_results)
         return results
 
     def _fetch_qdrant() -> List[Dict[str, Any]]:
         try:
             from app.services.job_indexing import search_jobs_by_query_semantic
-            roles_str = ", ".join(relevant_roles[:3]) if relevant_roles else target_role
-            skills_str = ", ".join(skills[:8]) if skills else roles_str
-            query_text = f"{roles_str}. Key skills: {skills_str}"
+            skills_str = ", ".join(skills[:8]) if skills else ""
+            query_text = f"{target_role}. Key skills: {skills_str}" if skills_str else target_role
             return search_jobs_by_query_semantic(query_text=query_text, limit=30)
         except Exception as e:
             logger.warning(f"Qdrant semantic retrieval failed: {e}")
@@ -159,7 +150,8 @@ def hybrid_match_and_rank_node(state: HireAgentState) -> Dict[str, Any]:
         jobs=candidate_jobs,
         target_role=target_role,
         relevant_roles=relevant_roles,
-        top_k=top_k
+        top_k=top_k,
+        filter_unrelated_roles=True
     )
     return {"ranked_jobs": ranked}
 
@@ -239,7 +231,8 @@ def validate_output_node(state: HireAgentState) -> Dict[str, Any]:
             location=j.get("location") or "India",
             posted_at=j.get("posted_at"),
             is_available=is_available,
-            url_status=url_status
+            url_status=url_status,
+            search_url=j.get("search_url")
         )
         validated.append(rec.model_dump())
     return {"ranked_jobs": validated}

@@ -8,7 +8,9 @@ from app.services.skill_service import (
     parse_job_required_skills,
     analyze_skill_gap,
     detect_candidate_role,
-    normalize_skill
+    normalize_skill,
+    is_role_compatible,
+    normalize_role
 )
 import threading
 from app.core.config import settings
@@ -129,35 +131,20 @@ def compute_role_score(
     relevant_roles: Optional[List[str]] = None
 ) -> Tuple[float, str]:
     """Calculates role relevance score (0 - 100) and qualitative label.
-    Prioritizes the candidate's selected target role (100.0), while also rewarding
-    jobs matching any of the candidate's discovered relevant roles (85.0).
+    Uses strict role compatibility gating to prevent unrelated cross-discipline contamination.
     """
-    cand = (candidate_role or "").lower().strip()
-    j_role = (job_role or "").lower().strip()
-    j_title = (job_title or "").lower().strip()
+    is_compat, score, label = is_role_compatible(candidate_role, job_title, job_role)
+    if is_compat:
+        return score, label
 
-    # 1. Exact match with primary/selected target role
-    if cand and (cand in j_role or cand in j_title or j_role in cand):
-        return 100.0, "High"
-
-    # 2. Match with any discovered relevant role supported by candidate's resume
+    # If not directly compatible with primary target role, check relevant roles if available
     if relevant_roles:
         for r in relevant_roles:
-            r_clean = r.lower().strip()
-            if r_clean and (r_clean in j_role or r_clean in j_title or j_role in r_clean):
+            r_compat, r_score, r_label = is_role_compatible(r, job_title, job_role)
+            if r_compat and r_score >= 80.0:
                 return 85.0, "High"
 
-    # 3. Related engineering clusters
-    related_clusters = [
-        {"ai engineer", "machine learning engineer", "data scientist", "deep learning", "nlp", "generative ai", "llm"},
-        {"backend developer", "python developer", "software engineer", "full stack", "data engineer"},
-    ]
-    all_target_roles = [cand] + ([r.lower().strip() for r in relevant_roles] if relevant_roles else [])
-    for cluster in related_clusters:
-        if any(any(c in t for c in cluster) for t in all_target_roles if t) and any(c in j_role or c in j_title for c in cluster):
-            return 75.0, "Moderate"
-
-    return 40.0, "Fair"
+    return min(score, 40.0), "Fair"
 
 def compute_semantic_score(resume_embedding: List[float], job_text: str) -> float:
     """Calculates semantic vector similarity between resume and job representation."""
@@ -198,15 +185,16 @@ def match_and_rank_jobs(
     target_role: Optional[str] = None,
     candidate_exp: Optional[str] = None,
     top_k: int = 10,
-    relevant_roles: Optional[List[str]] = None
+    relevant_roles: Optional[List[str]] = None,
+    filter_unrelated_roles: bool = False
 ) -> List[Dict[str, Any]]:
     """Performs hybrid job matching across candidate jobs and ranks the Top K results.
     
     Formula:
     Match Percentage = (
-        0.40 * Skill Match Score +
-        0.30 * Semantic Vector Similarity +
-        0.15 * Role Relevance Score +
+        0.35 * Skill Match Score +
+        0.25 * Semantic Vector Similarity +
+        0.25 * Role Relevance Score +
         0.10 * Experience Level Score +
         0.05 * ML TF-IDF/KNN Score
     )
@@ -222,22 +210,27 @@ def match_and_rank_jobs(
         from app.services.skill_service import discover_relevant_roles
         relevant_roles = discover_relevant_roles(resume_skills, resume_text, target_role=detected_role, max_roles=3)
 
-    # 1. Candidate Shortlisting:
-    # If many candidate jobs exist, shortlist using instant skill overlap & multi-role matching
-    # to avoid running expensive transformer encodings on completely unrelated roles.
-    if len(jobs) > 50:
-        shortlisted = []
-        for j in jobs:
-            req_list = parse_job_required_skills(j.get("required_skills", ""))
-            matched, _ = analyze_skill_gap(resume_skills, req_list)
-            s_score = compute_skill_score(matched, req_list)
-            r_score, _ = compute_role_score(detected_role, j.get("job_role", ""), j.get("job_title", ""), relevant_roles=relevant_roles)
-            prelim = (0.60 * s_score) + (0.40 * r_score)
-            shortlisted.append((prelim, j))
-        shortlisted.sort(key=lambda x: x[0], reverse=True)
-        candidate_jobs = [j for _, j in shortlisted[:50]]
-    else:
-        candidate_jobs = list(jobs)
+    # 1. Candidate Role Compatibility & Ranking Shortlist
+    role_filtered = []
+    for j in jobs:
+        j_title = j.get("job_title") or j.get("title") or ""
+        j_role = j.get("job_role") or j.get("role_category") or ""
+        r_score, r_label = compute_role_score(detected_role, j_role, j_title, relevant_roles=relevant_roles)
+        if filter_unrelated_roles and r_score < 60.0:
+            continue
+        req_list = parse_job_required_skills(j.get("required_skills", ""))
+        matched, _ = analyze_skill_gap(resume_skills, req_list)
+        s_score = compute_skill_score(matched, req_list)
+        # Role relevance (0.60) prioritizes role-aligned jobs, skills (0.40) rank within the role
+        prelim = (0.60 * r_score) + (0.40 * s_score)
+        role_filtered.append((prelim, j))
+
+    if not role_filtered:
+        logger.info(f"0 jobs out of {len(jobs)} were compatible with target role '{detected_role}'")
+        return []
+
+    role_filtered.sort(key=lambda x: x[0], reverse=True)
+    candidate_jobs = [j for _, j in role_filtered[:50]]
 
     # 2. Pre-generate resume embedding once for efficiency
     try:
@@ -323,10 +316,11 @@ def match_and_rank_jobs(
         knn_score = knn_matcher.get_job_similarity(resume_skills, job_id)
 
         # Hybrid Weighted Total
+        # Role relevance: 0.25, Skill score: 0.35, Semantic vector: 0.25, Experience: 0.10, KNN: 0.05
         final_pct = round(
-            (0.40 * skill_score) +
-            (0.30 * semantic_score) +
-            (0.15 * role_score) +
+            (0.35 * skill_score) +
+            (0.25 * semantic_score) +
+            (0.25 * role_score) +
             (0.10 * exp_score) +
             (0.05 * knn_score),
             1
@@ -347,6 +341,10 @@ def match_and_rank_jobs(
         if is_avail is None:
             is_avail = bool(app_url and str(app_url).strip().startswith(("http://", "https://")) and app_url != "Application link unavailable" and job.get("source_type") != "static_catalog")
 
+        import urllib.parse
+        search_query = f"{job_title} {company} jobs"
+        search_url = f"https://www.google.com/search?q={urllib.parse.quote_plus(search_query)}"
+
         scored_jobs.append({
             "id": job.get("id") or (int(ext_id) if ext_id.isdigit() else job_id),
             "job_id": explicit_jid,
@@ -362,6 +360,7 @@ def match_and_rank_jobs(
             "application_url": app_url,
             "apply_url": app_url,
             "canonical_job_url": canon_url,
+            "search_url": search_url,
             "source": job.get("source") or "HireAgent Test Catalog",
             "source_type": job.get("source_type") or "static_catalog",
             "location": job.get("location") or "India",

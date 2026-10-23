@@ -239,6 +239,9 @@
                                     {% if job.job_role %}
                                     <span class="badge badge-neutral fs-8">{{ job.job_role }}</span>
                                     {% endif %}
+                                    {% if job.source and job.source != 'Catalog' and job.source != 'HireAgent Test Catalog' %}
+                                    <span class="badge badge-surface text-muted fs-8 font-mono">{{ job.source }}</span>
+                                    {% endif %}
                                 </div>
                             </div>
                             <!-- Match Score Pill -->
@@ -295,9 +298,15 @@
                         {% else %}
                         <div class="d-inline-flex align-items-center gap-2">
                             <span class="badge badge-surface text-secondary fs-8">Posting unavailable</span>
+                            {% if job.search_url %}
+                            <a href="{{ job.search_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-ha-secondary d-inline-flex align-items-center gap-1" title="Search for this opportunity on Google">
+                                <span>Search Job →</span>
+                            </a>
+                            {% else %}
                             <a href="{{ url_for('jobs', search=job.title or job.job_title) }}" class="btn btn-sm btn-ha-secondary d-inline-flex align-items-center gap-1">
                                 <span>Find Similar Jobs</span>
                             </a>
+                            {% endif %}
                         </div>
                         {% endif %}
                     </div>

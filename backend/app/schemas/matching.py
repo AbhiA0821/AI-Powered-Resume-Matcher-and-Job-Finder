@@ -20,6 +20,7 @@ class JobRecommendation(BaseModel):
     posted_at: Optional[str] = None
     is_available: bool = True
     url_status: Optional[str] = "active"
+    search_url: Optional[str] = None
 
 class MatchingRequest(BaseModel):
     resume_id: Optional[int] = Field(None, description="Optional resume ID to match. If omitted, uses latest user resume.")

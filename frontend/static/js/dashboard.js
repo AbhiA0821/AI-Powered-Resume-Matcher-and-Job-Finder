@@ -106,6 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function hideProcessingState() {
         clearOverallTimeout();
+        stopPolling();
         if (processingTimer) clearInterval(processingTimer);
         if (processingSection) processingSection.classList.add('d-none');
         if (resultsSection) {
@@ -280,57 +281,110 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Polling for processing completion (used if page opened while processing is in flight)
+    // Polling for processing completion with non-overlapping requests and controlled backoff
     let pollAttempts = 0;
     const maxPollAttempts = 40;
+    let isPollInFlight = false;
+    let pollTimeoutId = null;
 
-    async function pollUntilFinished() {
-        pollAttempts = 0;
+    function stopPolling() {
+        if (pollTimeoutId) {
+            clearTimeout(pollTimeoutId);
+            pollTimeoutId = null;
+        }
+        isPollInFlight = false;
+    }
 
-        // Immediate initial check
+    async function executePollStep() {
+        if (document.hidden) {
+            // Document hidden: pause active fetch and check back in 2s
+            pollTimeoutId = setTimeout(executePollStep, 2000);
+            return;
+        }
+
+        if (isPollInFlight) {
+            return;
+        }
+
+        pollAttempts++;
+        if (pollAttempts > maxPollAttempts) {
+            stopPolling();
+            hideProcessingState();
+            setButtonLoading(false);
+            showError("Resume analysis and matching timed out. Please refresh or try again.");
+            return;
+        }
+
+        isPollInFlight = true;
+
         try {
-            const res = await fetch('/dashboard/poll');
+            const controller = new AbortController();
+            const fetchTimeout = setTimeout(() => controller.abort(), 8000); // 8s timeout per poll
+            let res;
+            try {
+                res = await fetch('/dashboard/poll', {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                    signal: controller.signal
+                });
+            } finally {
+                clearTimeout(fetchTimeout);
+            }
+
             if (res.status === 401) {
+                stopPolling();
                 window.location.href = '/login';
                 return;
             }
+
             if (res.ok) {
                 const data = await res.json();
-                if (!data.is_processing) {
-                    window.location.reload();
-                    return;
-                }
-            }
-        } catch (e) {}
 
-        const intervalId = setInterval(async () => {
-            if (document.hidden) return;
-
-            pollAttempts++;
-            if (pollAttempts > maxPollAttempts) {
-                clearInterval(intervalId);
-                window.location.reload();
-                return;
-            }
-
-            try {
-                const res = await fetch('/dashboard/poll');
-                if (res.status === 401) {
-                    clearInterval(intervalId);
-                    window.location.href = '/login';
-                    return;
-                }
-                if (res.ok) {
-                    const data = await res.json();
-                    if (!data.is_processing) {
-                        clearInterval(intervalId);
-                        window.location.reload();
+                // Dynamic progress display based on real backend pipeline stages
+                if (data.pipeline && Array.isArray(data.pipeline)) {
+                    const currentStage = data.pipeline.find(s => s.status === 'processing');
+                    if (currentStage) {
+                        if (aiProcessingTitle && currentStage.stage) {
+                            aiProcessingTitle.textContent = currentStage.stage.endsWith('...') ? currentStage.stage : `${currentStage.stage}...`;
+                        }
+                        if (aiProcessingSubtitle && currentStage.detail) {
+                            aiProcessingSubtitle.textContent = currentStage.detail;
+                        }
                     }
                 }
-            } catch (e) {
-                // Ignore transient network errors during poll
+
+                // Check for completion or failure
+                if (!data.is_processing) {
+                    stopPolling();
+                    if (data.last_error) {
+                        hideProcessingState();
+                        setButtonLoading(false);
+                        showError(data.last_error);
+                    } else {
+                        window.location.reload();
+                    }
+                    return;
+                }
             }
-        }, 1500);
+        } catch (e) {
+            // Transient fetch or abort error during poll; continue with backoff
+        } finally {
+            isPollInFlight = false;
+        }
+
+        // Controlled backoff: 1500ms initially, 2000ms after 5 attempts, 2500ms after 15 attempts
+        let delayMs = 1500;
+        if (pollAttempts > 15) {
+            delayMs = 2500;
+        } else if (pollAttempts > 5) {
+            delayMs = 2000;
+        }
+        pollTimeoutId = setTimeout(executePollStep, delayMs);
+    }
+
+    function pollUntilFinished() {
+        stopPolling();
+        pollAttempts = 0;
+        executePollStep();
     }
 
     if (processingSection && !processingSection.classList.contains('d-none')) {

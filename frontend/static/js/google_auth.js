@@ -51,8 +51,11 @@
             }
         }
 
+        let isSigningIn = false;
+
         btn.addEventListener("click", async function (e) {
             e.preventDefault();
+            if (isSigningIn) return;
             hideError();
 
             if (!hasConfig) {
@@ -65,6 +68,7 @@
                 return;
             }
 
+            isSigningIn = true;
             setButtonLoading(true);
 
             try {
@@ -78,26 +82,42 @@
 
                 const idToken = await result.user.getIdToken();
 
-                // Send ID token to HireAgent Flask backend endpoint
-                const response = await fetch("/login/firebase", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "Accept": "application/json"
-                    },
-                    body: JSON.stringify({ id_token: idToken })
-                });
+                // Send ID token to HireAgent Flask backend endpoint with 20s timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 20000);
 
-                const data = await response.json();
+                let response;
+                try {
+                    response = await fetch("/login/firebase", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Accept": "application/json"
+                        },
+                        body: JSON.stringify({ id_token: idToken }),
+                        signal: controller.signal
+                    });
+                } finally {
+                    clearTimeout(timeoutId);
+                }
+
+                const data = await response.json().catch(() => ({}));
 
                 if (response.ok && data.ok) {
                     window.location.href = data.redirect || "/dashboard";
                 } else {
                     showError(data.error || "Authentication backend could not verify your Google account.");
                     setButtonLoading(false);
+                    isSigningIn = false;
                 }
             } catch (err) {
                 setButtonLoading(false);
+                isSigningIn = false;
+
+                if (err.name === "AbortError") {
+                    showError("Authentication request timed out. Please check your network and try again.");
+                    return;
+                }
 
                 // Handle known Firebase popup errors gracefully
                 if (err.code === "auth/popup-closed-by-user" || err.code === "auth/cancelled-popup-request") {

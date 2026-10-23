@@ -37,6 +37,7 @@ class MatchOverview(BaseModel):
     recommendation: Optional[str] = None
     external_job_id: Optional[str] = None
     canonical_job_url: Optional[str] = None
+    search_url: Optional[str] = None
     source: Optional[str] = "Catalog"
     is_available: bool = True
     is_direct: bool = True
