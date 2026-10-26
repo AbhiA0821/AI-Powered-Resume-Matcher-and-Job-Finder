@@ -8,6 +8,7 @@ gunicorn
 waitress
 requests
 python-multipart
+streamlit>=1.35.0
 
 # Data & ML
 pandas

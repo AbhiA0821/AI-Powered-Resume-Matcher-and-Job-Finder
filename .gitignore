@@ -38,4 +38,8 @@ data/*.db
 *.log
 .pytest_cache/
 scratch/
-.fastembed_cache/
+.fastembed_cache/
+
+# Streamlit Community Cloud
+.streamlit/secrets.toml
+
