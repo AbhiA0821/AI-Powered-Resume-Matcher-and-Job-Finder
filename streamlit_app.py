@@ -373,7 +373,7 @@ with st.sidebar:
             </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("🚪 Sign Out", use_container_width=True, type="secondary"):
+        if st.button("🚪 Sign Out", use_container_width=True, type="secondary", key="btn_sign_out"):
             sign_out()
     else:
         st.info("👋 Please Sign In or Start Demo Mode to analyze your resume.")
@@ -479,7 +479,7 @@ if not st.session_state.auth_user:
     with auth_tab3:
         st.markdown("##### Explore without creating an account")
         st.write("Evaluating HireAgent on Streamlit Community Cloud? Launch an isolated demo session immediately with sample matching features enabled.")
-        if st.button("🚀 Launch Instant Demo Session", type="primary", use_container_width=True):
+        if st.button("🚀 Launch Instant Demo Session", type="primary", use_container_width=True, key="btn_demo_session"):
             start_demo_session()
 
     st.stop()
@@ -586,9 +586,9 @@ with main_tab1:
 
             col_btn1, col_btn2 = st.columns([1.5, 1])
             with col_btn1:
-                run_matching_btn = st.button("🚀 Run Hybrid Match & Job Discovery", type="primary", use_container_width=True)
+                run_matching_btn = st.button("🚀 Run Hybrid Match & Job Discovery", type="primary", use_container_width=True, key="btn_run_matching")
             with col_btn2:
-                if st.button("🔄 Re-analyze", use_container_width=True):
+                if st.button("🔄 Re-analyze", use_container_width=True, key="btn_reanalyze"):
                     st.session_state.matching_results = None
                     st.rerun()
         else:
@@ -820,10 +820,11 @@ with main_tab1:
                     with c_actions:
                         # Direct Apply Button if valid URL
                         is_valid_url = bool(app_url and str(app_url).strip().startswith(("http://", "https://")) and app_url != "Application link unavailable")
+                        job_id_val = job.get("job_id") or job.get("id") or idx
                         if is_valid_url:
-                            st.link_button("🚀 Apply Now", app_url, type="primary", use_container_width=True)
+                            st.link_button("🚀 Apply Now", app_url, type="primary", use_container_width=True, key=f"apply_{idx}_{job_id_val}")
                         else:
-                            st.button("🚫 Link Expired", disabled=True, use_container_width=True)
+                            st.button("🚫 Link Expired", disabled=True, use_container_width=True, key=f"expired_{idx}_{job_id_val}")
 
                         # Search Links Fallback
                         st.markdown("<div style='margin-top: 6px;'>", unsafe_allow_html=True)
@@ -861,13 +862,13 @@ with main_tab2:
     chip_cols = st.columns(3)
     preset_query = None
     with chip_cols[0]:
-        if st.button(f"🎯 How can I improve my match score for {current_role}?", use_container_width=True):
+        if st.button(f"🎯 How can I improve my match score for {current_role}?", use_container_width=True, key="chip_improve_score"):
             preset_query = f"How can I improve my match score for {current_role}? What specific skills should I add?"
     with chip_cols[1]:
-        if st.button("📈 What are the highest ROI skills to learn next?", use_container_width=True):
+        if st.button("📈 What are the highest ROI skills to learn next?", use_container_width=True, key="chip_roi_skills"):
             preset_query = "Based on my skill gaps, what are the top 3 highest ROI skills I should learn next?"
     with chip_cols[2]:
-        if st.button("📝 Review my resume profile strengths", use_container_width=True):
+        if st.button("📝 Review my resume profile strengths", use_container_width=True, key="chip_review_strengths"):
             preset_query = "Review my extracted technical skills and tell me my strongest qualifications."
 
     # Render Chat History
@@ -960,7 +961,7 @@ with main_tab3:
 
     st.caption(f"Showing {len(c_jobs)} catalog listings")
 
-    for j in c_jobs:
+    for idx, j in enumerate(c_jobs, start=1):
         j_title = j.get("job_title", "Software Engineer")
         j_comp = j.get("company", "Company")
         j_skills = j.get("required_skills", "")
@@ -976,4 +977,4 @@ with main_tab3:
             </div>
             """, unsafe_allow_html=True)
             if j_url and j_url.startswith(("http://", "https://")) and j_url != "Application link unavailable":
-                st.link_button("View Position", j_url, use_container_width=False)
+                st.link_button("View Position", j_url, use_container_width=False, key=f"cat_link_{idx}_{j.get('id', idx)}")

@@ -135,3 +135,42 @@ def test_in_process_skill_extraction_and_matching():
     assert "Google" in links
     assert "LinkedIn" in links
     assert "Indeed" in links
+
+def test_streamlit_widget_keys_in_loops():
+    """Verify that all st.button and st.link_button calls inside loops provide explicit keys to prevent DuplicateElementId."""
+    import ast
+    app_py_path = ROOT_DIR / "streamlit_app.py"
+    tree = ast.parse(app_py_path.read_text(encoding="utf-8"))
+
+    class LoopWidgetKeyChecker(ast.NodeVisitor):
+        def __init__(self):
+            self.in_loop = 0
+            self.missing_keys = []
+
+        def visit_For(self, node):
+            self.in_loop += 1
+            self.generic_visit(node)
+            self.in_loop -= 1
+
+        def visit_While(self, node):
+            self.in_loop += 1
+            self.generic_visit(node)
+            self.in_loop -= 1
+
+        def visit_Call(self, node):
+            if self.in_loop > 0:
+                is_st_widget = False
+                if isinstance(node.func, ast.Attribute):
+                    if isinstance(node.func.value, ast.Name) and node.func.value.id == "st":
+                        if node.func.attr in ("button", "link_button"):
+                            is_st_widget = True
+                if is_st_widget:
+                    has_key = any(kw.arg == "key" for kw in node.keywords)
+                    if not has_key:
+                        self.missing_keys.append((node.lineno, node.func.attr))
+            self.generic_visit(node)
+
+    checker = LoopWidgetKeyChecker()
+    checker.visit(tree)
+    assert not checker.missing_keys, f"Found Streamlit widgets in loops missing explicit 'key': {checker.missing_keys}"
+
